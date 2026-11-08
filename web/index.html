@@ -221,6 +221,7 @@
         <button data-band="2" class="on">蕾丝</button>
         <button data-band="1">素边</button>
         <button data-band="0">无</button>
+        <button data-band="3" hidden>自定义</button>
       </div>
       <h2>绑带</h2>
       <div class="seg">
@@ -240,6 +241,46 @@
         </div>
         <p class="hint">缎带从脚踝往上交叉缠绕，正面每 8 cm 交叉一次，两头各绕一圈。脚踝：只缠脚踝上方一段；小腿：到膝盖下面；整条：一直到袜口。</p>
       </div>
+    </section>
+
+    <section>
+      <h2>自定义贴图 <small>图片只在你这台设备的浏览器里，不会上传</small></h2>
+      <div class="custom">
+        <div class="custom-row" data-slot="pattern">
+          <i class="cthumb"></i>
+          <span class="cname">丝袜花纹</span>
+          <button type="button" class="pick">选图片</button>
+          <button type="button" class="clear" hidden>清除</button>
+          <input type="file" accept="image/*" hidden>
+          <div class="seg mini"><button type="button" data-cmode="mask" class="on">只取形状</button><button type="button" data-cmode="color">保留原色</button></div>
+          <label class="row"><span>绕腿重复</span><output id="customAround-v"></output></label>
+          <input type="range" id="customAround" min="1" max="8" step="1" value="3">
+        </div>
+        <div class="custom-row" data-slot="band">
+          <i class="cthumb"></i>
+          <span class="cname">袜口</span>
+          <button type="button" class="pick">选图片</button>
+          <button type="button" class="clear" hidden>清除</button>
+          <input type="file" accept="image/*" hidden>
+          <div class="seg mini"><button type="button" data-cmode="mask" class="on">只取形状</button><button type="button" data-cmode="color">保留原色</button></div>
+        </div>
+        <div class="custom-row" data-slot="strap">
+          <i class="cthumb"></i>
+          <span class="cname">绑带</span>
+          <button type="button" class="pick">选图片</button>
+          <button type="button" class="clear" hidden>清除</button>
+          <input type="file" accept="image/*" hidden>
+          <div class="seg mini"><button type="button" data-cmode="mask" class="on">只取形状</button><button type="button" data-cmode="color">保留原色</button></div>
+        </div>
+        <div class="custom-row" data-slot="bg">
+          <i class="cthumb"></i>
+          <span class="cname">展示框背景</span>
+          <button type="button" class="pick">选图片</button>
+          <button type="button" class="clear" hidden>清除</button>
+          <input type="file" accept="image/*" hidden>
+        </div>
+      </div>
+      <p class="hint">只取形状：只用图案的形状，颜色跟着丝袜（绑带）颜色走，换色方便；图片有透明部分就按透明部分取，没有就取浅底上的深色图案（或深底上的浅色图案）。保留原色：照片、彩色图案原样印上去，丝袜透不透肤仍按 D 数算。图片会缩到 1024 像素以内存在本机浏览器里，刷新后还在，点“清除”删掉。</p>
     </section>
   </aside>
 </div>

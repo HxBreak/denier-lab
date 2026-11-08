@@ -121,6 +121,10 @@ export function skinMaterial() {
 // band: 0 none, 1 plain welt, 2 lace
 // gradient (uGrad): 0 none, 1 colour (uColor at the welt -> uGradColor), 2 sheerness (thinner and
 // thinner); centred on u = uGradMid, uGradW wide; uGradFlip 1 runs it the other way up the leg
+// custom images (js/custom.js): the pattern texture can carry colour (uPatRGB 1); uBand 3 is a custom welt
+// (uBandTex, repeated uBandRepeat times round the leg, uBandRGB); uStrapTexMode 1/2 prints an image on
+// the straps as a mask or in colour. Mask: the motif in the stocking's (strap's) colour; colour: as is
+// (the stocking's sheerness still follows the denier)
 // straps (uStrap > 0): two pairs of satin ribbons wound round the leg in opposite directions, crossing
 // in an X on the front every 8 cm, from u = uStrapSpan.x to .y, with a ribbon round the leg at each end
 export function stockingMaterial() {
@@ -148,6 +152,13 @@ export function stockingMaterial() {
       uGradMid: { value: 0.6 },
       uGradW: { value: 0.25 },
       uGradFlip: { value: 0 },
+      uPatRGB: { value: 0 },
+      uBandTex: { value: null },
+      uBandRGB: { value: 0 },
+      uBandRepeat: { value: 8 },
+      uStrapTex: { value: null },
+      uStrapTexMode: { value: 0 },
+      uStrapAspect: { value: 1 },
       uStrap: { value: 0 },
       uStrapColor: { value: new THREE.Color('#15151a') },
       uStrapSpan: { value: new THREE.Vector2(0.45, 0.78) },
@@ -173,7 +184,9 @@ export function stockingMaterial() {
       uniform int uPattern, uBand, uGrad;
       uniform vec3 uGradColor;
       uniform float uGradMid, uGradW, uGradFlip;
-      uniform int uStrap;
+      uniform int uStrap, uStrapTexMode;
+      uniform float uPatRGB, uBandRGB, uBandRepeat, uStrapAspect;
+      uniform sampler2D uBandTex, uStrapTex;
       uniform vec3 uStrapColor;
       uniform vec2 uStrapSpan;
       uniform sampler2D uPatTex;
@@ -234,8 +247,9 @@ export function stockingMaterial() {
           vec2 uv2 = vec2((atan(-vFab.z, -vFab.y) / 6.2832 + 0.5) * uPatAround, uv.y);
           vec2 gx = dFdx(uv), gy = dFdy(uv), gx2 = dFdx(uv2), gy2 = dFdy(uv2);
           if (abs(gx2.x) + abs(gy2.x) < abs(gx.x) + abs(gy.x)) { gx = gx2; gy = gy2; }
-          float m = textureGrad(uPatTex, uv, gx, gy).a;
-          a = mix(a * uPatBase, 0.95, m);
+          vec4 tx = textureGrad(uPatTex, uv, gx, gy);
+          if (uPatRGB > 0.5) base = mix(base, tx.rgb, tx.a);   // a colour image: printed on, sheerness by denier
+          else a = mix(a * uPatBase, 0.95, tx.a);
         }
 
         float bandW = 0.06;
@@ -251,6 +265,14 @@ export function stockingMaterial() {
             float lace = max(ring, core);
             a = mix(0.25 + 0.4 * a, 0.97, lace);
             base *= mix(1.0, 0.85, lace);
+          } else if (uBand == 3) {                          // custom image, top of the image at the top edge
+            vec2 bv = vec2((atan(vFab.z, vFab.y) / 6.2832 + 0.5) * uBandRepeat, 1.0 - bu / bandW);
+            vec2 bv2 = vec2((atan(-vFab.z, -vFab.y) / 6.2832 + 0.5) * uBandRepeat, bv.y);
+            vec2 bx = dFdx(bv), by = dFdy(bv), bx2 = dFdx(bv2), by2 = dFdy(bv2);
+            if (abs(bx2.x) + abs(by2.x) < abs(bx.x) + abs(by.x)) { bx = bx2; by = by2; }   // see the pattern
+            vec4 tx = textureGrad(uBandTex, bv, bx, by);
+            if (uBandRGB > 0.5) { base = mix(base, tx.rgb, tx.a); a = max(a, 0.93 * tx.a); }
+            else { a = mix(0.15 + 0.3 * a, 0.97, tx.a); base *= mix(1.0, 0.85, tx.a); }
           } else {                                          // plain welt
             a = max(a, 0.93);
             base *= 0.9;
@@ -280,9 +302,29 @@ export function stockingMaterial() {
           float near = min(dRing, min(d1, d2));
           float fw = max(fwidth(du), 1e-5);
           ribbon = 1.0 - smoothstep(W - fw, W + fw, d);
+          vec4 stx = vec4(1.0);
+          if (uStrapTexMode > 0) {
+            // the image runs along the ribbon: (along, across) for the ribbon in view, in metres
+            float circ = 6.2832 * max(vFab.w, 0.02), sArc = x * circ;
+            vec2 g1 = vec2(2.0 / circ, -1.0 / P), g2 = vec2(2.0 / circ, 1.0 / P);
+            float along, across;
+            if (dRing < W) { along = sArc; across = abs(u - uStrapSpan.x) < abs(u - uStrapSpan.y) ? u - uStrapSpan.x : u - uStrapSpan.y; }
+            else {
+              bool first = (d == d1);
+              vec2 gg = first ? g1 : g2;
+              float f = first ? f1 : f2;
+              along = dot(vec2(sArc, u), vec2(-gg.y, gg.x)) / length(gg);
+              across = (fract(f + 0.5) - 0.5) / length(gg);
+            }
+            vec2 st = vec2(along / (2.0 * W * uStrapAspect), across / (2.0 * W) + 0.5);
+            vec2 sx = dFdx(st), sy = dFdy(st);
+            if (length(sx) + length(sy) > 0.5) { sx = vec2(0.0); sy = vec2(0.0); }   // jumps between ribbons
+            stx = textureGrad(uStrapTex, st, sx, sy);
+            ribbon *= stx.a;                              // see-through where the image has no motif
+          }
           // satin: lighter down the middle, darker at the edges, in shadow next to the ribbon above
           float prof = d / W;
-          vec3 rc = uStrapColor * (0.8 + 0.35 * (1.0 - prof * prof)) * mix(1.0, 0.65, smoothstep(0.75, 1.0, prof));
+          vec3 rc = (uStrapTexMode == 2 ? stx.rgb : uStrapColor) * (0.8 + 0.35 * (1.0 - prof * prof)) * mix(1.0, 0.65, smoothstep(0.75, 1.0, prof));
           if (d == dDown && dRing >= W) rc *= mix(0.6, 1.0, smoothstep(W, W + 0.002, under));
           // the fabric right beside a ribbon is pressed in and shaded
           rShade = mix(0.62, 1.0, smoothstep(W, W + 0.0025, near));

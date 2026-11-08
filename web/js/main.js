@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { StockingRig } from './stocking.js';
 import { skinMaterial, stockingMaterial, outlineMaterial } from './toon.js';
 import { Sfx } from './sound.js';
+import { saveSlot, loadSlots, scaleFile, makeTexture } from './custom.js';
 
 const $ = id => document.getElementById(id);
 const canvas = $('view');
@@ -30,6 +31,7 @@ const state = {
   grad: 0, gradColor: '#6e1f2e', gradPos: 0.5, flip: 0,   // gradient: 0 off, 1 colour, 2 sheerness (see toon.js)
   strap: 0, strapColor: '#15151a',         // criss-cross ribbons: 0 off, 1 ankle, 2 calf, 3 up to the welt
   knee: 1, shine: 1,                       // leg details (toon.js): knee lines, shine strip
+  customAround: 3,                         // a custom pattern image: repeats round the leg
   outline: 1,                              // 2 outline meshes, 1 soft edge in the shaders, 0 none
   focus: 0,                                // which leg is shown: 0 left (+x), 1 right
   shot: 0,                                 // camera framing, see SHOTS
@@ -132,6 +134,7 @@ function focusLeg(s) {
   document.querySelectorAll('[data-leg]').forEach(b => b.classList.toggle('on', +b.dataset.leg === s));
   frameShot();
   updateStatus();
+  bandRepeat();
 }
 function setShot(i) {
   state.shot = i;
@@ -152,6 +155,7 @@ const ranges = {
   top: lengthLabel,
   tight: tightLabel,
   bounce: bounceLabel,
+  customAround: n => `${n} 次`,
   gradPos: p => p < 0.3 ? '靠上' : p < 0.7 ? '中间' : '靠下',
 };
 for (const [id, fmt] of Object.entries(ranges)) {
@@ -238,7 +242,8 @@ function setPattern(key) {
   state.patternId = p ? key : null;
   const u = stock.uniforms;
   u.uPattern.value = state.pattern;
-  if (p) { u.uPatTex.value = patternTexture(p); u.uPatAround.value = p.around; u.uPatBase.value = p.base; }
+  if (p) { u.uPatTex.value = patternTexture(p); u.uPatAround.value = p.custom ? state.customAround : p.around; u.uPatBase.value = p.base; }
+  u.uPatRGB.value = p && p.custom && custom.pattern.mode === 'color' ? 1 : 0;
   document.querySelectorAll('#patterns button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
   state.dirty = true;
   refreshInfo();
@@ -254,6 +259,99 @@ for (const p of [...BUILTIN, ...patterns]) {
 document.querySelectorAll('[data-leg]').forEach(b => b.addEventListener('click', () => focusLeg(+b.dataset.leg)));
 document.querySelectorAll('[data-shot]').forEach(b => b.addEventListener('click', () => setShot(+b.dataset.shot)));
 $('put-on').onclick = () => putOn(state.focus);
+
+// ---------- custom images (js/custom.js): pattern, welt, straps, stage background ----------
+// Read and kept only in this browser. Each slot: { blob, mode: 'mask' | 'color', name, tex, aspect, preview }
+const custom = { pattern: null, band: null, strap: null, bg: null };
+const rowOf = slot => document.querySelector(`.custom-row[data-slot="${slot}"]`);
+// the custom welt image repeats a whole number of times round the leg, each tile 6 cm high
+function bandRepeat() {
+  if (!custom.band) return;
+  const L = rig.legs[state.focus], r = L.meanR[Math.min(L.rows - 2, Math.max(0, Math.round(rig._row(L, state.top))))];
+  stock.uniforms.uBandRepeat.value = Math.max(1, Math.round(2 * Math.PI * r / (0.06 * custom.band.aspect)));
+  state.dirty = true;
+}
+function customPatternButton(rec) {
+  let b = document.querySelector('#patterns button[data-key="custom"]');
+  if (!rec) { if (b) b.remove(); return; }
+  if (!b) {
+    b = document.createElement('button');
+    b.dataset.key = 'custom';
+    b.title = b.textContent = '自定义';
+    b.onclick = () => setPattern('custom');
+    $('patterns').appendChild(b);
+  }
+  // shape only: drawn like the generated patterns, in the stocking's colour; colour: the image itself
+  b.innerHTML = rec.mode === 'color' ? `<i data-img="1" style="background:url(${rec.preview}) center / cover"></i>自定义`
+    : `<i class="pat" style="--m:url(${rec.preview})"></i>自定义`;
+}
+async function applySlot(slot, rec, use) {
+  const old = custom[slot], u = stock.uniforms, row = rowOf(slot);
+  if (old) { old.tex && old.tex.dispose(); URL.revokeObjectURL(old.preview); }
+  custom[slot] = null;
+  if (rec) {
+    if (slot === 'bg') rec = { ...rec, preview: URL.createObjectURL(rec.blob) };
+    else { const t = await makeTexture(rec.blob, rec.mode, renderer); rec = { ...rec, tex: t.texture, aspect: t.aspect, preview: t.preview }; }
+    custom[slot] = rec;
+  }
+  if (slot === 'pattern') {
+    if (rec) { PATTERNS.custom = { id: 'custom', name: '自定义花纹', file: rec.preview, around: state.customAround, base: 1, custom: true }; textures.custom = rec.tex; }
+    else { delete PATTERNS.custom; delete textures.custom; }
+    customPatternButton(rec);
+    if (rec && (use || state.patternId === 'custom')) setPattern('custom');
+    else if (!rec && state.patternId === 'custom') setPattern('0');
+  } else if (slot === 'band') {
+    u.uBandTex.value = rec ? rec.tex : null;
+    u.uBandRGB.value = rec && rec.mode === 'color' ? 1 : 0;
+    document.querySelector('[data-band="3"]').hidden = !rec;
+    bandRepeat();
+    if (rec && use) setSeg('band', 3);
+    else if (!rec && state.band === 3) setSeg('band', 2);
+  } else if (slot === 'strap') {
+    u.uStrapTex.value = rec ? rec.tex : null;
+    u.uStrapTexMode.value = rec ? (rec.mode === 'color' ? 2 : 1) : 0;
+    u.uStrapAspect.value = rec ? rec.aspect : 1;
+    if (rec && use && !state.strap) setSeg('strap', 2);
+  } else if (slot === 'bg') {
+    const st = $('stage').style;
+    st.backgroundImage = rec ? `url(${rec.preview})` : '';
+    st.backgroundSize = rec ? 'cover' : '';
+    st.backgroundPosition = rec ? 'center' : '';
+  }
+  // the row: thumbnail, clear button, chosen mode
+  row.querySelector('.cthumb').style.backgroundImage = rec ? `url(${rec.preview})` : '';
+  row.querySelector('.cthumb').style.backgroundColor = rec && rec.mode === 'mask' ? '#3b3344' : '';   // white shape: show it on dark
+  row.querySelector('.clear').hidden = !rec;
+  if (rec) row.querySelectorAll('[data-cmode]').forEach(x => x.classList.toggle('on', x.dataset.cmode === rec.mode));
+  state.dirty = true;
+  refreshInfo();
+}
+for (const slot of Object.keys(custom)) {
+  const row = rowOf(slot), input = row.querySelector('input[type=file]');
+  const modeNow = () => (row.querySelector('[data-cmode].on') || {}).dataset?.cmode || 'mask';
+  row.querySelector('.pick').onclick = () => input.click();
+  input.onchange = async () => {
+    const file = input.files[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const rec = { blob: await scaleFile(file), mode: modeNow(), name: file.name };
+      await applySlot(slot, rec, true);
+      saveSlot(slot, { blob: rec.blob, mode: rec.mode, name: rec.name });
+    } catch (e) { alert('这张图片读不出来，换一张试试'); }
+  };
+  row.querySelector('.clear').onclick = () => { applySlot(slot, null); saveSlot(slot, null); };
+  row.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => {
+    row.querySelectorAll('[data-cmode]').forEach(x => x.classList.toggle('on', x === b));
+    const cur = custom[slot];
+    if (!cur || cur.mode === b.dataset.cmode) return;
+    const rec = { blob: cur.blob, mode: b.dataset.cmode, name: cur.name };
+    applySlot(slot, rec, false);
+    saveSlot(slot, rec);
+  });
+}
+// images kept from an earlier visit: available again (the background shows straight away)
+loadSlots().then(recs => { for (const [slot, rec] of Object.entries(recs)) if (rec && slot in custom) applySlot(slot, rec, slot === 'bg'); });
 
 // ---------- sound: starts with the first click or touch (browsers require one) ----------
 const sfx = new Sfx();
@@ -289,6 +387,8 @@ function apply() {
   u.uDenier.value = state.denier;
   u.uGloss.value = state.gloss;
   u.uTop.value = state.top;
+  if (state.patternId === 'custom') u.uPatAround.value = state.customAround;
+  bandRepeat();
   // the gradient's middle sits between the welt and the toes; it fades over 40% of that length
   const toe = (rig.uEnd[0] + rig.uEnd[1]) / 2;
   u.uGradMid.value = state.top + state.gradPos * (toe - state.top);
@@ -366,7 +466,7 @@ function refreshInfo() {
   const name = COLOR_NAMES[state.color] || '自定义色';
   const gen = PATTERNS[state.patternId];
   const kind = state.pattern === 1 ? '网眼' : state.pattern === 2 ? '条纹' : gen ? gen.name : '';
-  const band = state.band === 2 ? '蕾丝边' : '';
+  const band = state.band === 2 ? '蕾丝边' : state.band === 3 ? '自定义袜口' : '';
   const grad = state.grad === 1 ? `→${GRAD_NAMES[state.gradColor] || '自定义色'}渐变` : state.grad === 2 ? '渐变透' : '';
   const strap = state.strap ? `${STRAP_NAMES[state.strap]}绑带` : '';
   $('spec-name').textContent = `${state.denier}D ${name}${grad}${band}${kind}${strap}${lengthLabel(state.top)}`;
@@ -381,6 +481,7 @@ function refreshInfo() {
     b.classList.toggle('on', +b.dataset.d === state.denier);
   });
   document.querySelectorAll('#patterns i').forEach((el, i) => {
+    if (el.dataset.img) return;                     // a custom colour image shows itself
     const p = PATTERNS[el.parentNode.dataset.key];
     el.style.setProperty('--c', state.color);
     el.style.background = p ? swatch(state.color, state.denier * p.base) : swatch(state.color, state.denier, i);
