@@ -27,6 +27,7 @@ const state = {
   tight: 0.5,                              // how hard the welt clings to the leg (rig.tight)
   grad: 0, gradColor: '#6e1f2e', gradPos: 0.5, flip: 0,   // gradient: 0 off, 1 colour, 2 sheerness (see toon.js)
   strap: 0, strapColor: '#15151a',         // criss-cross ribbons: 0 off, 1 ankle, 2 calf, 3 up to the welt
+  knee: 1, shine: 1,                       // leg details (toon.js): knee lines, shine strip
   outline: 1,                              // 2 outline meshes, 1 soft edge in the shaders, 0 none
   focus: 0,                                // which leg is shown: 0 left (+x), 1 right
   shot: 0,                                 // camera framing, see SHOTS
@@ -52,6 +53,8 @@ controls.addEventListener('change', () => { if (rig.coarse) state.dirty = true; 
 
 const skin = skinMaterial();
 const stock = stockingMaterial();
+skin.uniforms.uKnee.value.set(info.l.knee, info.r.knee);
+stock.uniforms.uKnee.value.set(info.l.knee, info.r.knee);
 stock.uniforms.uToe.value.set(rig.uBall[0] - 0.035, rig.uBall[1] - 0.035);
 const outlines = [outlineMaterial(1.6, '#3b2228', null, skin), outlineMaterial(1.8, '#141018', stock)];
 
@@ -162,10 +165,11 @@ function setColor(hex) {
 document.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => setColor(b.dataset.color)));
 $('color').addEventListener('input', e => setColor(e.target.value));
 
-const SEGS = { band: 'uBand', outline: null, grad: 'uGrad', flip: 'uGradFlip', strap: 'uStrap' };
+const SEGS = { band: 'uBand', outline: null, grad: 'uGrad', flip: 'uGradFlip', strap: 'uStrap', knee: 'uKneeLines', shine: 'uShine' };
+const BOTH = new Set(['uKneeLines', 'uShine']);   // on the skin as well as the stocking
 function setSeg(name, v) {
   state[name] = v;
-  if (SEGS[name]) stock.uniforms[SEGS[name]].value = v;
+  if (SEGS[name]) { stock.uniforms[SEGS[name]].value = v; if (BOTH.has(SEGS[name])) skin.uniforms[SEGS[name]].value = v; }
   else setOutline(v);
   state.dirty = true;
   document.querySelectorAll(`[data-${name}]`).forEach(x => x.classList.toggle('on', +x.dataset[name] === v));

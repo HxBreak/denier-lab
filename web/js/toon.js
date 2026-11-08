@@ -10,6 +10,55 @@ uniform vec3 uLightDir;
 float celBand(float ndl, float soft) { return smoothstep(-soft, soft, ndl); }
 `;
 
+// Leg details, both switchable on the panel:
+//   knee lines: anime-style ink on the knee (an arc under the kneecap, a short stroke either side) and a
+//     small highlight on the kneecap, placed by u along the leg and the angle round it (0 = front)
+//   shine strip: a vertical highlight down the side of the leg facing the camera, leaning towards the
+//     light; it follows the view, so it slides over the leg when the camera turns
+const detailChunk = /* glsl */`
+uniform float uKneeLines, uShine;
+uniform vec2 uKnee;                      // u of the knee joint, left and right
+// ink (0..1) of the knee lines at u, angle (as cos, sin) and leg radius r (m); spot: kneecap highlight
+float segDist(vec2 p, vec2 a, vec2 b, out float t) {
+  vec2 ab = b - a;
+  t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
+  return length(p - a - ab * t);
+}
+float kneeInk(float u, vec2 cs, float r, float knee, out float spot) {
+  spot = 0.0;
+  float y = u - knee;                   // down the leg (m), 0 at the joint
+  if (uKneeLines < 0.5 || abs(y) > 0.06 || cs.x < 0.3) return 0.0;
+  float a = atan(cs.y, cs.x) * r;       // across the front (m)
+  vec2 p = vec2(a, y);
+  float fw = max(length(vec2(fwidth(a), fwidth(y))), 1e-5);
+  // under the kneecap: a shallow curve, lowest in the middle, thinning out at both ends
+  float k = 24.0;
+  float d1 = abs(y - (0.004 - k * a * a)) / sqrt(1.0 + 4.0 * k * k * a * a);
+  float w1 = 0.001 * (1.0 - smoothstep(0.005, 0.016, abs(a)));
+  // (times the width over a pixel: a stroke tapered to nothing must vanish, not stay half-drawn)
+  float ink = (1.0 - smoothstep(w1 - fw, w1 + fw, d1)) * clamp(w1 / fw, 0.0, 1.0);
+  // either side of the kneecap, well apart from the curve: a short stroke leaning in at the bottom
+  float t;
+  float s = sign(a);
+  float d2 = segDist(p, vec2(s * 0.025, -0.024), vec2(s * 0.021, -0.012), t);
+  float w2 = 0.0008 * sin(3.1416 * t);
+  ink = max(ink, (1.0 - smoothstep(w2 - fw, w2 + fw, d2)) * clamp(w2 / fw, 0.0, 1.0));
+  // the kneecap catching the light
+  spot = 1.0 - smoothstep(0.75, 1.0, length(vec2(a + 0.004, y + 0.017) / vec2(0.008, 0.011)));
+  return ink * smoothstep(0.3, 0.6, cs.x);
+}
+// the shine strip (0..1) for normal N, view V, light L
+float shineStrip(vec3 N, vec3 V, vec3 L) {
+  if (uShine < 0.5) return 0.0;
+  vec3 up = vec3(0.0, 1.0, 0.0);
+  vec3 Nh = N - dot(N, up) * up, Vh = V - dot(V, up) * up, Lh = L - dot(L, up) * up;
+  float horiz = length(Nh);              // the top of the foot faces up: no strip there
+  float h = dot(Nh / max(horiz, 1e-4), normalize(normalize(Vh) + 0.7 * normalize(Lh)));
+  float fw = max(fwidth(h), 1e-4);
+  return smoothstep(0.972 - fw, 0.972 + fw, h) * smoothstep(0.75, 0.9, horiz);
+}
+`;
+
 const commonVert = /* glsl */`
 varying vec3 vN;
 varying vec3 vW;
@@ -25,19 +74,28 @@ export function skinMaterial() {
       uRim: { value: new THREE.Color('#fff4ee') },
       uHide: { value: -1 },              // leg not shown: 0 left (+x), 1 right, -1 none
       uEdge: { value: 0 },               // 1: darken the silhouette in the shader instead of an outline mesh
+      uKneeLines: { value: 1 },
+      uShine: { value: 1 },
+      uKnee: { value: new THREE.Vector2(0.394, 0.394) },
     },
     vertexShader: commonVert + /* glsl */`
+      attribute vec2 aLegU;              // (u, 1 - theta), see the outline
+      varying vec3 vK;                   // u, cos theta, sin theta: no jump across the back seam
       void main() {
+        float th = 1.0 - aLegU.y;
+        vK = vec3(aLegU.x, cos(th), sin(th));
         vec4 w = modelMatrix * vec4(position, 1.0);
         vW = w.xyz;
         vN = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
-    fragmentShader: commonVert + lightChunk + /* glsl */`
+    fragmentShader: commonVert + lightChunk + detailChunk + /* glsl */`
       uniform vec3 uLit, uShade, uDeep, uRim;
       uniform float uHide, uEdge;
+      varying vec3 vK;
       void main() {
-        if ((vW.x > 0.0 ? 0.0 : 1.0) == uHide) discard;
+        float side = vW.x > 0.0 ? 0.0 : 1.0;
+        if (side == uHide) discard;
         vec3 N = normalize(vN);
         vec3 V = normalize(cameraPosition - vW);
         float ndl = dot(N, uLightDir);
@@ -48,6 +106,11 @@ export function skinMaterial() {
         // soft edge: a dark band where the surface turns away, a few pixels wide on the thigh
         float nv = max(dot(N, V), 0.0);
         col = mix(col, uDeep * 0.62, uEdge * (1.0 - smoothstep(0.08, 0.38, nv)) * 0.85);
+        // leg details: the shine strip and kneecap highlight, then the knee lines on top
+        float spot;
+        float ink = kneeInk(vK.x, vK.yz, 0.052, side < 0.5 ? uKnee.x : uKnee.y, spot);
+        col = mix(col, uRim, 0.5 * shineStrip(N, V, uLightDir) + 0.45 * spot);
+        col = mix(col, uDeep * 0.55, 0.6 * ink);
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }`,
@@ -88,6 +151,9 @@ export function stockingMaterial() {
       uStrap: { value: 0 },
       uStrapColor: { value: new THREE.Color('#15151a') },
       uStrapSpan: { value: new THREE.Vector2(0.45, 0.78) },
+      uKneeLines: { value: 1 },
+      uShine: { value: 1 },
+      uKnee: { value: new THREE.Vector2(0.394, 0.394) },
     },
     vertexShader: commonVert + /* glsl */`
       attribute vec4 aFab;
@@ -101,7 +167,7 @@ export function stockingMaterial() {
         vN = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
-    fragmentShader: commonVert + lightChunk + /* glsl */`
+    fragmentShader: commonVert + lightChunk + detailChunk + /* glsl */`
       uniform vec3 uColor, uColor2;
       uniform float uDenier, uGloss, uTop, uEdge, uPatAround, uPatBase;
       uniform int uPattern, uBand, uGrad;
@@ -234,6 +300,14 @@ export function stockingMaterial() {
         float spec = smoothstep(0.86, 0.88, dot(N, H)) * uGloss;
         float rim = smoothstep(0.55, 0.75, 1.0 - nv) * celBand(ndl + 0.2, 0.1) * uGloss;
         col += vec3(1.0) * (spec * 0.55 + rim * 0.25) * (1.0 - rolled * 0.5);
+        // leg details on the fabric: the shine strip grows with gloss; the skin's knee lines show through
+        // sheer fabric by themselves, so the fabric only adds them as it gets opaque
+        if (rolled < 0.5 && vPull < 0.02) {
+          float spot;
+          float ink = kneeInk(u, vec2(vFab.y, vFab.z) / max(length(vFab.yz), 1e-5), vFab.w, vSide < 0.5 ? uKnee.x : uKnee.y, spot);
+          col += vec3(1.0) * shineStrip(N, V, uLightDir) * (0.12 + 0.5 * uGloss) * (1.0 - ribbon);
+          col = mix(col, col * 0.4, ink * smoothstep(0.5, 0.95, a) * 0.8 * (1.0 - ribbon));
+        }
         // soft edge (see the skin): darker and more opaque where the fabric turns away; not on fabric
         // pulled off the leg, whose silhouette is a taut sheet seen almost edge-on
         float edge = uEdge * (1.0 - smoothstep(0.08, 0.38, abs(dot(N, V)))) * (1.0 - smoothstep(0.0, 0.3, vPull));
