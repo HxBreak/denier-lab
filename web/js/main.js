@@ -25,6 +25,7 @@ const state = {
   color: '#1b1b22', denier: 20, gloss: 0.35, pattern: 0, band: 2, top: 0.3,
   patternId: null,                         // with pattern 3: which generated mask (web/patterns/)
   tight: 0.5,                              // how hard the welt clings to the leg (rig.tight)
+  grad: 0, gradColor: '#6e1f2e', gradPos: 0.5, flip: 0,   // gradient: 0 off, 1 colour, 2 sheerness (see toon.js)
   outline: 1,                              // 2 outline meshes, 1 soft edge in the shaders, 0 none
   focus: 0,                                // which leg is shown: 0 left (+x), 1 right
   shot: 0,                                 // camera framing, see SHOTS
@@ -140,6 +141,7 @@ const ranges = {
   gloss: glossLabel,
   top: lengthLabel,
   tight: tightLabel,
+  gradPos: p => p < 0.3 ? '靠上' : p < 0.7 ? '中间' : '靠下',
 };
 for (const [id, fmt] of Object.entries(ranges)) {
   const el = $(id), out = $(id + '-v');
@@ -159,15 +161,27 @@ function setColor(hex) {
 document.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => setColor(b.dataset.color)));
 $('color').addEventListener('input', e => setColor(e.target.value));
 
-const SEGS = { band: 'uBand', outline: null };
+const SEGS = { band: 'uBand', outline: null, grad: 'uGrad', flip: 'uGradFlip' };
 function setSeg(name, v) {
   state[name] = v;
   if (SEGS[name]) stock.uniforms[SEGS[name]].value = v;
   else setOutline(v);
   state.dirty = true;
   document.querySelectorAll(`[data-${name}]`).forEach(x => x.classList.toggle('on', +x.dataset[name] === v));
+  if (name === 'grad') { $('grad-opts').hidden = !v; $('grad-color-row').hidden = v !== 1; }
   refreshInfo();
 }
+const GRAD_NAMES = Object.fromEntries([...document.querySelectorAll('[data-gcolor]')].map(b => [b.dataset.gcolor, b.title]));
+function setGradColor(hex) {
+  state.gradColor = hex;
+  stock.uniforms.uGradColor.value.set(hex);
+  $('gcolor').value = hex;
+  document.querySelectorAll('[data-gcolor]').forEach(x => x.classList.toggle('on', x.dataset.gcolor === hex));
+  state.dirty = true;
+  refreshInfo();
+}
+document.querySelectorAll('[data-gcolor]').forEach(b => b.addEventListener('click', () => setGradColor(b.dataset.gcolor)));
+$('gcolor').addEventListener('input', e => setGradColor(e.target.value));
 for (const name of Object.keys(SEGS))
   document.querySelectorAll(`[data-${name}]`).forEach(b => b.addEventListener('click', () => setSeg(name, +b.dataset[name])));
 
@@ -241,6 +255,10 @@ function apply() {
   u.uDenier.value = state.denier;
   u.uGloss.value = state.gloss;
   u.uTop.value = state.top;
+  // the gradient's middle sits between the welt and the toes; it fades over 40% of that length
+  const toe = (rig.uEnd[0] + rig.uEnd[1]) / 2;
+  u.uGradMid.value = state.top + state.gradPos * (toe - state.top);
+  u.uGradW.value = 0.4 * (toe - state.top);
   // a stocking that is still on moves with the length slider; a half-removed one keeps its welt
   for (let s = 0; s < 2; s++) {
     if (state.off[s] || state.anim[s]) continue;
@@ -267,6 +285,8 @@ const PRESETS = [
   { name: '灰色哑光', color: '#7d7f88', denier: 60, gloss: 0, pattern: 0, band: 0, top: 0.34 },
   { name: '玫瑰蕾丝', color: '#1b1b22', denier: 15, gloss: 0.3, pattern: 'rose_lace', band: 2, top: 0.3 },
   { name: '焦糖豹纹', color: '#4a2c1c', denier: 25, gloss: 0.3, pattern: 'leopard', band: 1, top: 0.3 },
+  { name: '黑红渐变', color: '#1b1b22', denier: 40, gloss: 0.3, pattern: 0, band: 1, top: 0.3, grad: 1, gradColor: '#6e1f2e', gradPos: 0.55 },
+  { name: '渐变透肤', color: '#1b1b22', denier: 90, gloss: 0.25, pattern: 0, band: 2, top: 0.3, grad: 2, gradPos: 0.45 },
 ].filter(p => typeof p.pattern === 'number' || PATTERNS[p.pattern]);
 const coverage = d => 1 - Math.exp(-d / 55);
 const mixHex = (a, b, t) => '#' + [0, 2, 4].map(i => Math.round(parseInt(a.substr(1 + i, 2), 16) * (1 - t) + parseInt(b.substr(1 + i, 2), 16) * t).toString(16).padStart(2, '0')).join('');
@@ -288,11 +308,16 @@ for (const d of STRIP) {
 }
 for (const p of PRESETS) {
   const b = document.createElement('button'), gen = PATTERNS[p.pattern];
+  const flat = (c, d) => mixHex(SKIN, c, coverage(d));
   const look = gen ? ` class="pat" style="--c:${p.color};--m:url(${gen.file});background:${swatch(p.color, p.denier * gen.base)}"`
+    : p.grad === 1 ? ` style="background:linear-gradient(180deg, ${flat(p.color, p.denier)} 30%, ${flat(p.gradColor, p.denier)} 75%)"`
+    : p.grad === 2 ? ` style="background:linear-gradient(180deg, ${flat(p.color, p.denier)} 25%, ${flat(p.color, p.denier * 0.18)} 70%)"`
     : ` style="background:${swatch(p.color, p.denier, p.pattern)}"`;
   b.innerHTML = `<i${look}></i><span>${p.name}</span>`;
   b.onclick = () => {
     setColor(p.color); setPattern(String(p.pattern)); setSeg('band', p.band);
+    setSeg('grad', p.grad || 0); setSeg('flip', 0); setRange('gradPos', p.gradPos ?? 0.5);
+    if (p.gradColor) setGradColor(p.gradColor);
     setRange('denier', p.denier); setRange('gloss', p.gloss); setRange('top', p.top);
   };
   $('presets').appendChild(b);
@@ -302,7 +327,8 @@ function refreshInfo() {
   const gen = PATTERNS[state.patternId];
   const kind = state.pattern === 1 ? '网眼' : state.pattern === 2 ? '条纹' : gen ? gen.name : '';
   const band = state.band === 2 ? '蕾丝边' : '';
-  $('spec-name').textContent = `${state.denier}D ${name}${band}${kind}${lengthLabel(state.top)}`;
+  const grad = state.grad === 1 ? `→${GRAD_NAMES[state.gradColor] || '自定义色'}渐变` : state.grad === 2 ? '渐变透' : '';
+  $('spec-name').textContent = `${state.denier}D ${name}${grad}${band}${kind}${lengthLabel(state.top)}`;
   $('spec-denier').textContent = `${state.denier}D · ${denierLabel(state.denier)}`;
   const sheer = state.pattern === 1 ? 85 : Math.round((1 - coverage(state.denier * (gen ? gen.base : 1))) * (gen ? 75 : 100));
   $('spec-sheer').textContent = `${sheer}%`;

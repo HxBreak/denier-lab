@@ -122,6 +122,33 @@
         <button data-color="#24325e" style="--c:#24325e" title="藏青"></button>
         <input type="color" id="color" value="#1b1b22" title="自定义颜色">
       </div>
+      <h2>渐变</h2>
+      <div class="seg">
+        <button data-grad="0" class="on">关</button>
+        <button data-grad="1">颜色</button>
+        <button data-grad="2">深浅</button>
+      </div>
+      <div id="grad-opts" hidden>
+        <div id="grad-color-row">
+          <p class="hint">从上面选的颜色渐变到：</p>
+          <div class="swatches">
+            <button data-gcolor="#f2efea" style="--c:#f2efea" title="白色"></button>
+            <button data-gcolor="#d9b49a" style="--c:#d9b49a" title="肤色"></button>
+            <button data-gcolor="#6e1f2e" class="on" style="--c:#6e1f2e" title="酒红"></button>
+            <button data-gcolor="#24325e" style="--c:#24325e" title="藏青"></button>
+            <button data-gcolor="#e7a1b5" style="--c:#e7a1b5" title="粉色"></button>
+            <button data-gcolor="#98d8c1" style="--c:#98d8c1" title="薄荷绿"></button>
+            <input type="color" id="gcolor" value="#6e1f2e" title="自定义渐变色">
+          </div>
+        </div>
+        <label class="row"><span>渐变位置</span><output id="gradPos-v"></output></label>
+        <input type="range" id="gradPos" min="0" max="1" step="0.05" value="0.5">
+        <div class="seg">
+          <button data-flip="0" class="on">从上往下</button>
+          <button data-flip="1">从下往上</button>
+        </div>
+        <p class="hint">颜色：袜口是上面选的颜色，往脚尖慢慢变成第二种颜色。深浅：颜色不变，越往下越薄透。位置是渐变的中点，在袜口和脚尖之间。“从下往上”把方向倒过来：脚尖是上面选的颜色（或者最厚），往上变。</p>
+      </div>
     </section>
 
     <section>

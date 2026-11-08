@@ -56,6 +56,8 @@ export function skinMaterial() {
 
 // pattern: 0 plain, 1 fishnet, 2 stripes, 3 a mask texture (uPatTex, see tools/gen_patterns.py);
 // band: 0 none, 1 plain welt, 2 lace
+// gradient (uGrad): 0 none, 1 colour (uColor at the welt -> uGradColor), 2 sheerness (thinner and
+// thinner); centred on u = uGradMid, uGradW wide; uGradFlip 1 runs it the other way up the leg
 export function stockingMaterial() {
   return new THREE.ShaderMaterial({
     transparent: true,
@@ -76,6 +78,11 @@ export function stockingMaterial() {
       uPatTex: { value: null },
       uPatAround: { value: 6 },          // repeats round the leg: the knit has a fixed number of stitches
       uPatBase: { value: 1 },            // how much of the plain knit shows between motifs (0: open holes)
+      uGrad: { value: 0 },
+      uGradColor: { value: new THREE.Color('#6e1f2e') },
+      uGradMid: { value: 0.6 },
+      uGradW: { value: 0.25 },
+      uGradFlip: { value: 0 },
     },
     vertexShader: commonVert + /* glsl */`
       attribute vec4 aFab;
@@ -92,7 +99,9 @@ export function stockingMaterial() {
     fragmentShader: commonVert + lightChunk + /* glsl */`
       uniform vec3 uColor, uColor2;
       uniform float uDenier, uGloss, uTop, uEdge, uPatAround, uPatBase;
-      uniform int uPattern, uBand;
+      uniform int uPattern, uBand, uGrad;
+      uniform vec3 uGradColor;
+      uniform float uGradMid, uGradW, uGradFlip;
       uniform sampler2D uPatTex;
       uniform vec2 uToe, uOff;
       varying vec4 vFab;
@@ -118,11 +127,18 @@ export function stockingMaterial() {
         // hand pulling it out) thins the knit; at grazing angles light crosses more fabric, so the
         // silhouette goes darker (softened a little for the toon look)
         float toe = smoothstep(-0.04, 0.0, u - (vSide < 0.5 ? uToe.x : uToe.y));
-        float D = uDenier * (1.0 - 0.45 * vStretch) * (1.0 - 0.6 * vPull) * (1.0 + 0.3 * toe);
+        // gradient: 0 at the welt end, 1 at the toe end (or the other way round)
+        float gt = 0.0;
+        if (uGrad > 0) {
+          gt = smoothstep(uGradMid - 0.5 * uGradW, uGradMid + 0.5 * uGradW, u);
+          if (uGradFlip > 0.5) gt = 1.0 - gt;
+        }
+        float D = uDenier * (1.0 - 0.45 * vStretch) * (1.0 - 0.6 * vPull) * (1.0 + 0.3 * toe)
+                * (uGrad == 2 ? mix(1.0, 0.18, gt) : 1.0);
         float a0 = 1.0 - exp(-D / 55.0);
         // fabric pulled off the leg is a stretched, see-through sheet: less darkening at grazing angles
         float a = 1.0 - pow(1.0 - a0, 1.0 / pow(mix(nv, 1.0, 0.7 * vPull), 0.7));
-        vec3 base = uColor;
+        vec3 base = uGrad == 1 ? mix(uColor, uGradColor, gt) : uColor;
 
         if (uPattern == 1) {                                // fishnet
           vec2 q = vec2(s + u, s - u) / 0.018;
@@ -132,7 +148,7 @@ export function stockingMaterial() {
           a = mix(0.0, 0.96, line);
         } else if (uPattern == 2) {                         // stripes across the leg
           float st = aa(abs(fract(u / 0.045) - 0.5), 0.25);
-          base = mix(uColor, uColor2, st);
+          base = mix(base, uColor2, st);
           a = max(a, 0.9);
         } else if (uPattern == 3) {                         // mask texture: opaque motifs on the sheer knit
           // a whole number of repeats round the leg, so it wraps without a seam; tiles are square on the
@@ -160,10 +176,10 @@ export function stockingMaterial() {
             float core = 1.0 - aa(d, 0.09);
             float lace = max(ring, core);
             a = mix(0.25 + 0.4 * a, 0.97, lace);
-            base = uColor * mix(1.0, 0.85, lace);
+            base *= mix(1.0, 0.85, lace);
           } else {                                          // plain welt
             a = max(a, 0.93);
-            base = uColor * 0.9;
+            base *= 0.9;
             if (bu > bandW - 0.004) base *= 0.75;           // seam line under the welt
           }
         }
