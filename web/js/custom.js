@@ -4,7 +4,7 @@
 // Two ways to use an image (not for the background):
 //   mask   only its shape: where the motif is, in the stocking's (or strap's) own colour. The motif is
 //          the image's transparency if it has any, otherwise whichever of light and dark is the minority
-//          (a dark motif on a light ground, or a light one on dark)
+//          (a dark motif on a light ground, or a light one on dark); invert swaps motif and ground
 //   color  the image's own colours
 import * as THREE from 'three';
 
@@ -25,7 +25,7 @@ function run(mode, fn) {
     tx.onerror = () => fail(tx.error);
   }));
 }
-// rec: { blob (the scaled PNG), mode, name } or null to forget the slot. Storage can be off (private
+// rec: { blob (the scaled PNG), mode, invert, name } or null to forget the slot. Storage can be off (private
 // windows): then the image simply lasts until the page is closed.
 export async function saveSlot(slot, rec) {
   try { await run('readwrite', s => rec ? s.put(rec, slot) : s.delete(slot)); } catch { /* not kept */ }
@@ -52,7 +52,7 @@ export async function scaleFile(file) {
 }
 
 // a stored blob -> { texture, aspect (width / height), preview (object URL of what the texture shows) }
-export async function makeTexture(blob, mode, renderer) {
+export async function makeTexture(blob, mode, renderer, invert = false) {
   const bmp = await createImageBitmap(blob);
   const c = document.createElement('canvas');
   c.width = bmp.width; c.height = bmp.height;
@@ -69,7 +69,8 @@ export async function makeTexture(blob, mode, renderer) {
     const useAlpha = see > n * 0.01, darkMotif = lum / n > 127;
     for (let i = 0; i < d.length; i += 4) {
       const L = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-      const a = useAlpha ? d[i + 3] : (darkMotif ? 255 - L : L) * d[i + 3] / 255;
+      let a = useAlpha ? d[i + 3] : (darkMotif ? 255 - L : L) * d[i + 3] / 255;
+      if (invert) a = 255 - a;
       d[i] = d[i + 1] = d[i + 2] = 255;
       d[i + 3] = a;
     }

@@ -261,7 +261,7 @@ document.querySelectorAll('[data-shot]').forEach(b => b.addEventListener('click'
 $('put-on').onclick = () => putOn(state.focus);
 
 // ---------- custom images (js/custom.js): pattern, welt, straps, stage background ----------
-// Read and kept only in this browser. Each slot: { blob, mode: 'mask' | 'color', name, tex, aspect, preview }
+// Read and kept only in this browser. Each slot: { blob, mode: 'mask' | 'color', invert, name, tex, aspect, preview }
 const custom = { pattern: null, band: null, strap: null, bg: null };
 const rowOf = slot => document.querySelector(`.custom-row[data-slot="${slot}"]`);
 // the custom welt image repeats a whole number of times round the leg, each tile 6 cm high
@@ -291,7 +291,7 @@ async function applySlot(slot, rec, use) {
   custom[slot] = null;
   if (rec) {
     if (slot === 'bg') rec = { ...rec, preview: URL.createObjectURL(rec.blob) };
-    else { const t = await makeTexture(rec.blob, rec.mode, renderer); rec = { ...rec, tex: t.texture, aspect: t.aspect, preview: t.preview }; }
+    else { const t = await makeTexture(rec.blob, rec.mode, renderer, !!rec.invert); rec = { ...rec, tex: t.texture, aspect: t.aspect, preview: t.preview }; }
     custom[slot] = rec;
   }
   if (slot === 'pattern') {
@@ -322,12 +322,23 @@ async function applySlot(slot, rec, use) {
   row.querySelector('.cthumb').style.backgroundImage = rec ? `url(${rec.preview})` : '';
   row.querySelector('.cthumb').style.backgroundColor = rec && rec.mode === 'mask' ? '#3b3344' : '';   // white shape: show it on dark
   row.querySelector('.clear').hidden = !rec;
-  if (rec) row.querySelectorAll('[data-cmode]').forEach(x => x.classList.toggle('on', x.dataset.cmode === rec.mode));
+  if (rec) {
+    row.querySelectorAll('[data-cmode]').forEach(x => x.classList.toggle('on', x.dataset.cmode === rec.mode));
+    const inv = row.querySelector('.invert');
+    if (inv) inv.classList.toggle('on', !!rec.invert);
+  }
+  showInvert(row);
   state.dirty = true;
   refreshInfo();
 }
+// 反相 only means something for 只取形状
+function showInvert(row) {
+  const inv = row.querySelector('.invert');
+  if (inv) inv.hidden = (row.querySelector('[data-cmode].on') || {}).dataset?.cmode === 'color';
+}
 for (const slot of Object.keys(custom)) {
   const row = rowOf(slot), input = row.querySelector('input[type=file]');
+  const invertNow = () => !!(row.querySelector('.invert') || {}).classList?.contains('on');
   const modeNow = () => (row.querySelector('[data-cmode].on') || {}).dataset?.cmode || 'mask';
   row.querySelector('.pick').onclick = () => input.click();
   input.onchange = async () => {
@@ -335,20 +346,30 @@ for (const slot of Object.keys(custom)) {
     input.value = '';
     if (!file) return;
     try {
-      const rec = { blob: await scaleFile(file), mode: modeNow(), name: file.name };
+      const rec = { blob: await scaleFile(file), mode: modeNow(), invert: invertNow(), name: file.name };
       await applySlot(slot, rec, true);
-      saveSlot(slot, { blob: rec.blob, mode: rec.mode, name: rec.name });
+      saveSlot(slot, rec);
     } catch (e) { alert('这张图片读不出来，换一张试试'); }
   };
   row.querySelector('.clear').onclick = () => { applySlot(slot, null); saveSlot(slot, null); };
   row.querySelectorAll('[data-cmode]').forEach(b => b.onclick = () => {
     row.querySelectorAll('[data-cmode]').forEach(x => x.classList.toggle('on', x === b));
+    showInvert(row);
     const cur = custom[slot];
     if (!cur || cur.mode === b.dataset.cmode) return;
-    const rec = { blob: cur.blob, mode: b.dataset.cmode, name: cur.name };
+    const rec = { blob: cur.blob, mode: b.dataset.cmode, invert: !!cur.invert, name: cur.name };
     applySlot(slot, rec, false);
     saveSlot(slot, rec);
   });
+  const inv = row.querySelector('.invert');
+  if (inv) inv.onclick = () => {
+    inv.classList.toggle('on');
+    const cur = custom[slot];
+    if (!cur) return;
+    const rec = { blob: cur.blob, mode: cur.mode, invert: inv.classList.contains('on'), name: cur.name };
+    applySlot(slot, rec, false);
+    saveSlot(slot, rec);
+  };
 }
 // images kept from an earlier visit: available again (the background shows straight away)
 loadSlots().then(recs => { for (const [slot, rec] of Object.entries(recs)) if (rec && slot in custom) applySlot(slot, rec, slot === 'bg'); });
