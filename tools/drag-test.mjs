@@ -12,7 +12,8 @@ page.setDefaultTimeout(300000);
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 await page.setViewport({ width: 1440, height: 860 });
-await page.goto(process.argv[2] || 'http://127.0.0.1:8090/', { waitUntil: 'networkidle0' });
+// wait for load, not networkidle0: on the live site that never fired within 15 minutes on 2026-11-08
+await page.goto(process.argv[2] || 'http://127.0.0.1:8090/', { waitUntil: 'load' });
 await page.waitForFunction('window.__dl');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 // every check that fails is listed at the end and makes the script exit with code 1
