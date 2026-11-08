@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Denier Lab 丝袜模拟器</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/build/three.module.js",
+  "three/addons/": "./vendor/three/jsm/"
+} }
+</script>
+</head>
+<body>
+<div class="layout">
+  <!-- left: what is on the leg right now -->
+  <aside class="info">
+    <header class="brand">
+      <h1>Denier Lab</h1>
+      <p>丝袜模拟器 · 卡通版</p>
+    </header>
+
+    <section class="card spec">
+      <h2>当前款式</h2>
+      <p id="spec-name" class="spec-name"></p>
+      <dl>
+        <dt>厚度</dt><dd id="spec-denier"></dd>
+        <dt>透肤</dt><dd><span class="meter"><i id="spec-sheer-bar"></i></span><b id="spec-sheer"></b></dd>
+        <dt>光泽</dt><dd id="spec-gloss"></dd>
+        <dt>长度</dt><dd id="spec-length"></dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>厚度对比 <small>点一下试穿</small></h2>
+      <div id="denier-strip" class="strip"></div>
+    </section>
+
+    <section class="card">
+      <h2>款式预设</h2>
+      <div id="presets" class="presets"></div>
+    </section>
+
+    <section class="card progress-card">
+      <div class="ring" id="ring"><span id="ring-v">0%</span></div>
+      <div>
+        <h2 id="progress-title">左腿：穿着</h2>
+        <p class="hint">捏住袜口往下拉；往腿外拖可以把丝袜扯离腿面，松手会弹回去。</p>
+      </div>
+    </section>
+  </aside>
+
+  <!-- centre: the leg -->
+  <main class="stage-wrap">
+    <div class="stage" id="stage">
+      <canvas id="view"></canvas>
+      <div class="fade-top"></div>
+      <div id="loading">加载中…</div>
+      <div id="grip" aria-hidden="true"></div>
+      <button id="sound" class="icon-btn" type="button" aria-label="音效">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" fill="currentColor"/>
+          <path class="wave" d="M15.5 9a4 4 0 0 1 0 6M17.8 6.6a7.5 7.5 0 0 1 0 10.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          <path class="mute" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <pre id="perf" hidden></pre>
+      <div class="stage-bar seg" id="shots">
+        <button data-shot="0" class="on">全腿</button>
+        <button data-shot="1">大腿</button>
+        <button data-shot="2">小腿</button>
+        <button data-shot="3">脚</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- right: controls -->
+  <aside id="panel">
+    <section>
+      <h2>看哪条腿</h2>
+      <div class="seg">
+        <button data-leg="0" class="on">左腿</button>
+        <button data-leg="1">右腿</button>
+      </div>
+      <h2>穿脱</h2>
+      <p class="hint">用鼠标或手指捏住袜口的任意一处，一点点往下拉：被捏住的一侧先滑下来，布料堆在袜口上；其他地方被袜口带着，慢慢卷起来跟着往下走。往腿外侧拖，能把丝袜从腿上扯起来，松手会弹回去。要一直拉过脚尖才会完全脱下。</p>
+      <div class="seg">
+        <button id="put-on">重新穿上</button>
+      </div>
+      <p id="status" class="status"></p>
+      <label class="row"><span>紧绷度</span><output id="tight-v"></output></label>
+      <input type="range" id="tight" min="0" max="1" step="0.05" value="0.5">
+      <p class="hint">越紧，远端的袜口越贴着腿：往下拉时落后得越多，往回拉时越不跟着手指上来（拉到最紧时完全不跟）。越松，整圈袜口越像一个整体一起动。</p>
+    </section>
+
+    <section>
+      <h2>风格</h2>
+      <div class="seg">
+        <button class="on">卡通</button>
+        <button disabled title="下一版">写实（下一版）</button>
+      </div>
+      <h2>描边</h2>
+      <div class="seg">
+        <button data-outline="2">线条</button>
+        <button data-outline="1" class="on">柔和</button>
+        <button data-outline="0">无</button>
+      </div>
+      <p class="hint">线条：皮肤和丝袜外面套一层描边，轮廓最清楚，但要多画一遍腿（渲染量约翻倍）。柔和：不多画，只在着色时把转过去的边缘压暗。无：浅色丝袜和光腿的轮廓会和背景混在一起。</p>
+    </section>
+
+    <section>
+      <h2>颜色</h2>
+      <div class="swatches">
+        <button data-color="#1b1b22" class="on" style="--c:#1b1b22" title="黑色"></button>
+        <button data-color="#d9b49a" style="--c:#d9b49a" title="肤色"></button>
+        <button data-color="#7d7f88" style="--c:#7d7f88" title="灰色"></button>
+        <button data-color="#f2efea" style="--c:#f2efea" title="白色"></button>
+        <button data-color="#6e1f2e" style="--c:#6e1f2e" title="酒红"></button>
+        <button data-color="#24325e" style="--c:#24325e" title="藏青"></button>
+        <input type="color" id="color" value="#1b1b22" title="自定义颜色">
+      </div>
+    </section>
+
+    <section>
+      <label class="row"><span>厚度</span><output id="denier-v"></output></label>
+      <input type="range" id="denier" min="5" max="200" step="1" value="20">
+      <label class="row"><span>光泽</span><output id="gloss-v"></output></label>
+      <input type="range" id="gloss" min="0" max="1" step="0.01" value="0.35">
+      <label class="row"><span>袜长</span><output id="top-v"></output></label>
+      <input type="range" id="top" min="0.26" max="0.52" step="0.01" value="0.3">
+    </section>
+
+    <section>
+      <h2>花纹 <small>后面这些是用生图接口做的</small></h2>
+      <div id="patterns" class="patterns"></div>
+      <h2>袜口</h2>
+      <div class="seg">
+        <button data-band="2" class="on">蕾丝</button>
+        <button data-band="1">素边</button>
+        <button data-band="0">无</button>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

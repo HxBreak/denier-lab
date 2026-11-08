@@ -1,0 +1,57 @@
+// Renders each sound effect offline (no speaker needed) and prints its peak and loudness, to check
+// that everything is audible and nothing clips. Then, in a browser with the default autoplay policy,
+// checks that no audio starts before a click and that it does start on the first click.
+// Exits with code 1 if a check fails.
+//   node tools/sound-check.mjs [url]
+import puppeteer from 'puppeteer-core';
+const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  headless: 'new', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage();
+const errors = [];
+page.on('pageerror', e => errors.push(String(e)));
+await page.setViewport({ width: 1440, height: 860 });
+await page.goto(process.argv[2] || 'http://127.0.0.1:8090/', { waitUntil: 'networkidle0' });
+await page.waitForFunction('window.__dl');
+const res = await page.evaluate(async () => {
+  const { Sfx } = await import('./js/sound.js');
+  const render = async (secs, play) => {
+    const ctx = new OfflineAudioContext(1, 44100 * secs, 44100), sfx = new Sfx();
+    sfx.on = true;
+    sfx.unlock(ctx);
+    play(sfx);
+    const d = (await ctx.startRendering()).getChannelData(0);
+    let peak = 0, sum = 0;
+    for (const v of d) { peak = Math.max(peak, Math.abs(v)); sum += v * v; }
+    const db = x => (20 * Math.log10(x || 1e-9)).toFixed(1).padStart(6);
+    return `peak ${db(peak)} dB  rms ${db(Math.sqrt(sum / d.length))} dB`;
+  };
+  return [
+    ['grab', 0.2, s => s.grab()],
+    ['snap (hard)', 0.3, s => s.snap(1)],
+    ['snap (last bounce)', 0.3, s => s.snap(0.12)],
+    ['off', 0.8, s => s.off()],
+    ['putOn 1.5 s', 1.6, s => s.putOn(1.5)],
+    ['rustle, fast drag', 1, s => s.update(0.3, 0, 0)],
+    ['rustle, slow drag', 1, s => s.update(0.05, 0, 0)],
+    ['stretch, pulling out', 1, s => s.update(0.1, 0.8, 1.5)],
+    ['held still', 1, s => s.update(0, 0.8, 0)],
+    ['silent (nothing moving)', 1, s => s.update(0, 0, 0)],
+  ].reduce(async (acc, [name, secs, fn]) => [...await acc, `${name.padEnd(24)} ${await render(secs, fn)}`], []);
+});
+console.log(res.join('\n'));
+// the real thing, under the default autoplay policy: nothing before a click, running after it
+const failures = [];
+const before = await page.evaluate(() => __dl.sfx.ctx ? __dl.sfx.ctx.state : 'none');
+await page.mouse.click(700, 300);
+await new Promise(r => setTimeout(r, 300));
+const after = await page.evaluate(() => __dl.sfx.ctx && __dl.sfx.ctx.state);
+console.log('audio before any click:', before, '| after a click:', after);
+if (before !== 'none') failures.push(`audio was created before any click (${before})`);
+if (after !== 'running') failures.push(`audio did not start on the first click (${after})`);
+await page.click('#sound');
+console.log('sound button -> on =', await page.evaluate(() => __dl.sfx.on), '| remembered:', await page.evaluate(() => localStorage.getItem('denier-lab.sound')));
+await page.click('#sound');
+failures.push(...errors.map(e => 'page error: ' + e));
+console.log(failures.length ? 'FAILED:\n  ' + failures.join('\n  ') : 'all checks passed, no page errors');
+process.exitCode = failures.length ? 1 : 0;
+await browser.close();

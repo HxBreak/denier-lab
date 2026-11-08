@@ -1,0 +1,72 @@
+[
+ {
+  "id": "rose_lace",
+  "name": "玫瑰蕾丝",
+  "file": "patterns/rose_lace.png",
+  "around": 1,
+  "base": 0.35
+ },
+ {
+  "id": "vine",
+  "name": "巴洛克藤蔓",
+  "file": "patterns/vine.png",
+  "around": 1,
+  "base": 1
+ },
+ {
+  "id": "leopard",
+  "name": "豹纹",
+  "file": "patterns/leopard.png",
+  "around": 2,
+  "base": 1
+ },
+ {
+  "id": "hearts",
+  "name": "小爱心",
+  "file": "patterns/hearts.png",
+  "around": 2,
+  "base": 1
+ },
+ {
+  "id": "butterfly",
+  "name": "蝴蝶",
+  "file": "patterns/butterfly.png",
+  "around": 1,
+  "base": 1
+ },
+ {
+  "id": "stars",
+  "name": "星星月亮",
+  "file": "patterns/stars.png",
+  "around": 2,
+  "base": 1
+ },
+ {
+  "id": "houndstooth",
+  "name": "千鸟格",
+  "file": "patterns/houndstooth.png",
+  "around": 3,
+  "base": 1
+ },
+ {
+  "id": "argyle",
+  "name": "菱格",
+  "file": "patterns/argyle.png",
+  "around": 3,
+  "base": 1
+ },
+ {
+  "id": "sakura",
+  "name": "樱花",
+  "file": "patterns/sakura.png",
+  "around": 2,
+  "base": 1
+ },
+ {
+  "id": "spiderweb",
+  "name": "蛛网",
+  "file": "patterns/spiderweb.png",
+  "around": 1,
+  "base": 0.2
+ }
+]
