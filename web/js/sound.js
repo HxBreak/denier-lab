@@ -5,14 +5,22 @@
 //   snap     the welt slapping back onto the leg when let go, once per bounce
 //   grab, off (slides off the toes), on (slides back up the leg)
 // Browsers only allow audio after a click or touch, so nothing plays before the first one.
-const PREF = 'denier-lab.sound';
+// Volume (0..1) is a panel slider; it starts at half, and both it and on/off are remembered in this browser.
+const PREF = 'denier-lab.sound', VOL = 'denier-lab.volume';
 
 export class Sfx {
   constructor() {
     this.ctx = null;
     this.on = true;
-    try { this.on = localStorage.getItem(PREF) !== 'off'; } catch { /* no storage: sound stays on */ }
+    this.vol = 0.5;
+    try {
+      this.on = localStorage.getItem(PREF) !== 'off';
+      const v = parseFloat(localStorage.getItem(VOL));
+      if (v >= 0 && v <= 1) this.vol = v;
+    } catch { /* no storage: sound stays on at half volume */ }
   }
+
+  get level() { return this.on ? this.vol : 0; }
 
   // call from a click or touch: creates (or wakes) the audio graph
   // (tools/sound-check.mjs passes an OfflineAudioContext to render the sounds without a speaker)
@@ -25,7 +33,7 @@ export class Sfx {
     const comp = ctx.createDynamicsCompressor();
     comp.connect(ctx.destination);
     this.master = ctx.createGain();
-    this.master.gain.value = this.on ? 0.9 : 0;
+    this.master.gain.value = this.level;
     this.master.connect(comp);
 
     // two seconds of white noise: the raw material for everything
@@ -51,7 +59,13 @@ export class Sfx {
   setOn(on) {
     this.on = on;
     try { localStorage.setItem(PREF, on ? 'on' : 'off'); } catch { /* not remembered */ }
-    if (this.ctx) this.master.gain.setTargetAtTime(on ? 0.9 : 0, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.master.gain.setTargetAtTime(this.level, this.ctx.currentTime, 0.05);
+  }
+
+  setVolume(v) {
+    this.vol = Math.min(1, Math.max(0, v));
+    try { localStorage.setItem(VOL, String(this.vol)); } catch { /* not remembered */ }
+    if (this.ctx) this.master.gain.setTargetAtTime(this.level, this.ctx.currentTime, 0.05);
   }
 
   // every frame. speed: how fast the fabric moves (m/s); tension: how far the welt is pulled off
@@ -79,23 +93,29 @@ export class Sfx {
     this.creakOsc.frequency.setTargetAtTime(28 + 70 * tension + 10 * Math.random(), t, 0.03);
   }
 
-  // the welt slapping back onto the skin (strength 0..1)
+  // the welt slapping back onto the skin (strength 0..1): a soft, bright elastic snap with only a
+  // light thump under it. Kept well below the drag sounds: a comment said the old, boomy one
+  // (a 160 -> 60 Hz thump) was startling, so no deep low end and no instant attack
   snap(strength) {
     if (!this._ready() || strength < 0.04) return;
     const ctx = this.ctx, t = ctx.currentTime, s = Math.min(1, strength);
-    const slap = this._burst(0.12, [['lowpass', 1600 + 3000 * s, 0.8]]);
+    const slap = this._burst(0.08, [['highpass', 1100, 0.7], ['peaking', 3800 + 1800 * s, 1.2, 6]]);
     slap.gain.setValueAtTime(0, t);
-    slap.gain.linearRampToValueAtTime(1.1 * s, t + 0.003);
-    slap.gain.exponentialRampToValueAtTime(0.001, t + 0.07 + 0.05 * s);
-    // and the thump of the leg under it
+    slap.gain.linearRampToValueAtTime(0.5 * s, t + 0.004);
+    slap.gain.exponentialRampToValueAtTime(0.001, t + 0.035 + 0.03 * s);
+    // the very first click of the band hitting skin
+    const click = this._burst(0.01, [['highpass', 4500, 0.7]]);
+    click.gain.setValueAtTime(0.25 * s, t);
+    click.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
+    // and a short, light thump of the leg under it
     const o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.setValueAtTime(160, t);
-    o.frequency.exponentialRampToValueAtTime(60, t + 0.12);
-    g.gain.setValueAtTime(0.6 * s, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    o.frequency.setValueAtTime(240, t);
+    o.frequency.exponentialRampToValueAtTime(110, t + 0.06);
+    g.gain.setValueAtTime(0.12 * s, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
     o.connect(g).connect(this.master);
     o.start(t);
-    o.stop(t + 0.16);
+    o.stop(t + 0.08);
   }
 
   // a finger hooking under the welt
@@ -136,9 +156,9 @@ export class Sfx {
 
   // filters in a row into a gain into the master; returns { input, filters, gain }
   _chain(spec) {
-    const ctx = this.ctx, filters = spec.map(([type, f, q]) => {
+    const ctx = this.ctx, filters = spec.map(([type, f, q, db = 0]) => {
       const b = ctx.createBiquadFilter();
-      b.type = type; b.frequency.value = f; b.Q.value = q;
+      b.type = type; b.frequency.value = f; b.Q.value = q; b.gain.value = db;   // db: peaking/shelf filters only
       return b;
     });
     const gain = ctx.createGain();

@@ -51,6 +51,17 @@ if (after !== 'running') failures.push(`audio did not start on the first click (
 await page.click('#sound');
 console.log('sound button -> on =', await page.evaluate(() => __dl.sfx.on), '| remembered:', await page.evaluate(() => localStorage.getItem('denier-lab.sound')));
 await page.click('#sound');
+// the volume slider: starts at half, sets the master gain, is remembered, and turns muted sound back on
+const vol0 = await page.evaluate(() => [__dl.sfx.vol, document.getElementById('vol-v').textContent]);
+await page.click('#sound');                                   // mute first
+await page.$eval('#vol', el => { el.value = 0.2; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); });
+await new Promise(r => setTimeout(r, 400));
+const vol1 = await page.evaluate(() => ({ vol: __dl.sfx.vol, on: __dl.sfx.on, gain: +__dl.sfx.master.gain.value.toFixed(3),
+  stored: localStorage.getItem('denier-lab.volume'), label: document.getElementById('vol-v').textContent }));
+console.log('volume at start:', vol0.join(' '), '| after setting 20%:', JSON.stringify(vol1));
+if (vol0[0] !== 0.5) failures.push(`volume should start at 0.5, got ${vol0[0]}`);
+if (!vol1.on || vol1.vol !== 0.2 || Math.abs(vol1.gain - 0.2) > 0.01 || vol1.stored !== '0.2')
+  failures.push('volume slider did not turn sound on, set the gain to 0.2 and remember it');
 failures.push(...errors.map(e => 'page error: ' + e));
 console.log(failures.length ? 'FAILED:\n  ' + failures.join('\n  ') : 'all checks passed, no page errors');
 process.exitCode = failures.length ? 1 : 0;

@@ -212,8 +212,18 @@ const sfx = new Sfx();
 for (const type of ['pointerdown', 'keydown', 'touchend']) document.addEventListener(type, () => sfx.unlock(), { capture: true });
 const soundBtn = $('sound');
 const showSound = () => { soundBtn.classList.toggle('off', !sfx.on); soundBtn.title = sfx.on ? '关闭音效' : '打开音效'; };
+const volEl = $('vol'), volOut = $('vol-v');
+const showVol = () => { volEl.value = sfx.vol; volOut.textContent = sfx.vol ? `${Math.round(sfx.vol * 100)}%` : '静音'; };
 soundBtn.onclick = () => { sfx.setOn(!sfx.on); showSound(); };
+// moving the volume slider also turns sound on; letting go plays one snap to hear the level
+volEl.addEventListener('input', () => {
+  sfx.setVolume(+volEl.value);
+  if (!sfx.on && sfx.vol > 0) { sfx.setOn(true); showSound(); }
+  showVol();
+});
+volEl.addEventListener('change', () => sfx.snap(0.8));
 showSound();
+showVol();
 
 // ---------- ?perf: how much of the stocking each frame recomputes, and how long it takes ----------
 const perf = new URLSearchParams(location.search).has('perf') ? perfMeter($('perf')) : null;
