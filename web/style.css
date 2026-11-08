@@ -48,6 +48,9 @@ body.grabbing #view { cursor: grabbing; }
   pointer-events: none;
 }
 #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+.load-box { width: min(70%, 260px); display: grid; gap: 8px; justify-items: center; font-size: 13px; text-align: center; }
+.load-bar { width: 100%; height: 6px; border-radius: 3px; background: rgba(60, 40, 80, 0.12); overflow: hidden; }
+.load-bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .2s; }
 body.ready #loading { display: none; }
 #grip {
   position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%;

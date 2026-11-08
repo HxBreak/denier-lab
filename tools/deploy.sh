@@ -19,7 +19,9 @@ TS=$(date -u +%Y%m%dT%H%M%SZ)
 BASE=/srv/denier
 REL=$BASE/releases/$TS
 FILES=(index.html style.css js/main.js js/stocking.js js/toon.js js/sound.js models/legs.glb models/legs.json
-       patterns/patterns.json vendor/three/build/three.module.js sfx/snap.mp3)
+       patterns/patterns.json vendor/three/build/three.module.js sfx/snap.mp3
+       vendor/three/jsm/loaders/DRACOLoader.js vendor/three/jsm/libs/draco/gltf/draco_decoder.wasm
+       vendor/three/jsm/libs/draco/gltf/draco_wasm_wrapper.js)
 
 # run a bash script on the VM (sent on stdin), retrying when ssh itself fails (exit 255)
 remote() {

@@ -18,7 +18,7 @@ the rays hit the 3D convex hull of the forefoot instead, so the stocking wraps t
 front of the leg.
 
 Outputs (Y-up, metres, feet on y = 0, facing +Z):
-  web/models/legs.glb     "Legs" (UV0 = MakeHuman skin UVs, UV1 = "leg") and "Stocking" (UV0 = "fab";
+  models-src/legs.glb     (compressed into web/models/legs.glb by tools/compress-model.sh) "Legs" (UV0 = MakeHuman skin UVs, UV1 = "leg") and "Stocking" (UV0 = "fab";
                           glTF stores 1 - v)
   web/models/legs.json    per side: u of knee / ankle / ball / toe tip, and per ring of the stocking
                           tube its u, centre C, tangent T (down the leg) and normal N (theta = 0)
@@ -338,7 +338,9 @@ def main():
     bpy.ops.object.select_all(action="DESELECT")
     body.select_set(True)
     stocking.select_set(True)
-    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, "legs.glb"), use_selection=True, export_format="GLB",
+    # uncompressed; tools/compress-model.sh turns it into web/models/legs.glb (Draco)
+    os.makedirs(os.path.join(ROOT, "models-src"), exist_ok=True)
+    bpy.ops.export_scene.gltf(filepath=os.path.join(ROOT, "models-src", "legs.glb"), use_selection=True, export_format="GLB",
                               export_yup=True, export_apply=True, export_texcoords=True, export_normals=True,
                               export_materials="NONE", export_animations=False)
     yup = lambda v: [round(v.x, 6), round(v.z, 6), round(-v.y, 6)]

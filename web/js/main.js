@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { StockingRig } from './stocking.js';
 import { skinMaterial, stockingMaterial, outlineMaterial } from './toon.js';
@@ -36,8 +37,11 @@ const state = {
   dirty: true,
 };
 
+// the model is Draco-compressed (tools/compress-model.sh); index.html has usually started downloading it
+const gltfLoader = new GLTFLoader().setDRACOLoader(new DRACOLoader().setDecoderPath('vendor/three/jsm/libs/draco/gltf/'));
+const modelBytes = window.__model || fetch('models/legs.glb').then(r => r.arrayBuffer());
 const [gltf, info, patterns] = await Promise.all([
-  new GLTFLoader().loadAsync('models/legs.glb'),
+  modelBytes.then(buf => gltfLoader.parseAsync(buf, '')),
   fetch('models/legs.json').then(r => r.json()),
   fetch('patterns/patterns.json').then(r => r.ok ? r.json() : []).catch(() => []),   // tools/gen_patterns.py
 ]);
@@ -214,6 +218,8 @@ for (const name of Object.keys(SEGS))
 const BUILTIN = [{ id: '0', name: '素面' }, { id: '1', name: '网袜' }, { id: '2', name: '条纹' }];
 const PATTERNS = Object.fromEntries(patterns.map(p => [p.id, p]));
 const texLoader = new THREE.TextureLoader(), textures = {};
+// buttons and swatches use 128 px copies (tools/make_thumbs.py); the full mask loads when a pattern is picked
+const thumb = p => p.file.replace('patterns/', 'patterns/thumbs/');
 function patternTexture(p) {
   if (!textures[p.id]) {
     const t = textures[p.id] = texLoader.load(p.file, () => { state.dirty = true; });
@@ -238,7 +244,7 @@ for (const p of [...BUILTIN, ...patterns]) {
   const b = document.createElement('button');
   b.dataset.key = p.id;
   b.title = p.name;
-  b.innerHTML = `<i${PATTERNS[p.id] ? ` class="pat" style="--m:url(${p.file})"` : ''}></i>${p.name}`;
+  b.innerHTML = `<i${PATTERNS[p.id] ? ` class="pat" style="--m:url(${thumb(p)})"` : ''}></i>${p.name}`;
   b.onclick = () => setPattern(p.id);
   $('patterns').appendChild(b);
 }
@@ -337,7 +343,7 @@ for (const d of STRIP) {
 for (const p of PRESETS) {
   const b = document.createElement('button'), gen = PATTERNS[p.pattern];
   const flat = (c, d) => mixHex(SKIN, c, coverage(d));
-  const look = gen ? ` class="pat" style="--c:${p.color};--m:url(${gen.file});background:${swatch(p.color, p.denier * gen.base)}"`
+  const look = gen ? ` class="pat" style="--c:${p.color};--m:url(${thumb(gen)});background:${swatch(p.color, p.denier * gen.base)}"`
     : p.strap ? ` style="background:repeating-linear-gradient(30deg, transparent 0 7px, ${p.strapColor} 7px 9px), repeating-linear-gradient(-30deg, transparent 0 7px, ${p.strapColor} 7px 9px), ${swatch(p.color, p.denier)}"`
     : p.grad === 1 ? ` style="background:linear-gradient(180deg, ${flat(p.color, p.denier)} 30%, ${flat(p.gradColor, p.denier)} 75%)"`
     : p.grad === 2 ? ` style="background:linear-gradient(180deg, ${flat(p.color, p.denier)} 25%, ${flat(p.color, p.denier * 0.18)} 70%)"`

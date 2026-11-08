@@ -18,7 +18,10 @@
 
 ```
 denier-lab/
-  blender/build_legs.py   用 MPFB 生成腿部模型和丝袜管，导出 web/models/legs.glb + legs.json
+  blender/build_legs.py   用 MPFB 生成腿部模型和丝袜管，导出 models-src/legs.glb（未压缩）+ web/models/legs.json
+  models-src/legs.glb     Blender 导出的原始模型（2.5 MB），不直接发布
+  tools/compress-model.sh 把 models-src/legs.glb 压成 web/models/legs.glb（Draco，约 330 KB）
+  tools/make_thumbs.py    花纹按钮用的 128 px 小图 → web/patterns/thumbs/（gen_patterns.py 之后运行）
   web/                    网站根目录（serve.sh 直接发布这个目录）
     index.html, style.css
     js/main.js            场景、镜头、界面、信息栏、拖动和扯离交互
@@ -44,6 +47,7 @@ denier-lab/
 常用命令：
 ```sh
 /Applications/Blender.app/Contents/MacOS/Blender --background --python blender/build_legs.py   # 重建模型
+./tools/compress-model.sh        # 每次重建模型后都要跑：压缩成网页用的 legs.glb
 ./serve.sh                       # 发布
 node tools/shoot.mjs             # 截图（需要 serve.sh 在运行）
 node tools/drag-test.mjs         # 交互测试
@@ -64,6 +68,15 @@ node tools/perf.mjs              # 性能
   - 半径沿圈和沿腿各平滑一遍，再和原始值取较大者，保证不会陷进皮肤。
   - UV `fab` = (u, (θ + π) / 2π)。`legs.json` 记录每圈的 u、圆心 C、切线 T、法线 N，以及膝、踝、跖骨球、脚尖的 u。
 - 试过但放弃的脚趾做法（都是在复制来的皮肤网格上改）：沿法线往外推、按截面外轮廓推、按切片凸包推、在 Blender 里体素重建后烘焙外推量。前三种不是推不动就是把三角形撕碎；第四种不碎了，但网格还是跟着每根脚趾走，网袜花纹在脚上全乱了。
+
+### 3.1b 加载速度和进度条（`index.html`、`compress-model.sh`）
+晚上从国内访问东京服务器很慢（2026-11-08 实测约 25 KB/s），原来的模型 2.5 MB 要下载近 100 秒，页面约 150 秒才能用。
+- **模型压缩**：Draco，位置和 UV 用 16 位、法线 12 位，2.47 MB → 330 KB。不用 meshopt：它的量化会把顶点坐标挪到另一个坐标系（靠节点缩放还原）、把 UV 重新映射，而 `stocking.js` 和着色器直接读几何体里的原始坐标和 UV。Draco 解码后回到原来的坐标，16 位精度约 0.014 mm、角度约 0.0001 rad，远小于 4 mm 的圈距。
+  - 验证：同一组截图（`shoot.mjs`）用原模型和压缩模型各渲染一次，每张 124 万像素里只有 25–214 个像素（轮廓边缘的抗锯齿）有明显差别；丝袜变形算出的圈数和点数和原来完全一样，`drag-test`、`lod-check`（整条重算和增量计算的差仍是 0）都通过。
+  - 解码器用 three 自带的 Draco（`vendor/three/jsm/libs/draco/gltf/` 的 wasm + 包装脚本，gzip 后约 80 KB），nginx 已对 wasm 开了 gzip。
+- **进度条**：`index.html` 里一小段内联脚本一打开页面就开始下载模型（和 three.js 同时下载，不用等它），按 Content-Length 显示百分比和 KB；`main.js` 直接解码这份数据（`window.__model`），不再下载第二遍。模型下载完后显示“正在加载渲染程序…”直到画面出来。
+- **花纹小图**：花纹按钮和预设色块原来直接用 1024 px 的遮罩，打开页面就要下载 10 张共 2.1 MB；现在用 128 px 小图（共 121 KB），整张遮罩只在选中那个花纹时才下载。
+- 模拟 25 KB/s：本地测试服务器不压缩，three.js 要传 1.3 MB；线上 nginx 会压到 340 KB，所以线上会比本地模拟快。
 
 ### 3.2 丝袜变形（`stocking.js`）
 - 载入时按位置合并 glTF 在 θ 接缝和脚尖拆开的顶点，再按“腿 → 圈 → 列”重新排序：第 s 条腿第 r 圈第 k 列的顶点编号 = base[s] + r·96 + k，最后一圈是脚尖的一个点。三角形也按所在的圈排序，所以腿上任意一段都是连续的一块顶点和一段索引。每圈的半径表、平均半径直接从管子上读出来。用平均半径算**拉伸系数**（大腿最粗处 = 1，小腿最细处 = 0）。
