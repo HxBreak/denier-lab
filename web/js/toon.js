@@ -58,6 +58,8 @@ export function skinMaterial() {
 // band: 0 none, 1 plain welt, 2 lace
 // gradient (uGrad): 0 none, 1 colour (uColor at the welt -> uGradColor), 2 sheerness (thinner and
 // thinner); centred on u = uGradMid, uGradW wide; uGradFlip 1 runs it the other way up the leg
+// straps (uStrap > 0): two pairs of satin ribbons wound round the leg in opposite directions, crossing
+// in an X on the front every 8 cm, from u = uStrapSpan.x to .y, with a ribbon round the leg at each end
 export function stockingMaterial() {
   return new THREE.ShaderMaterial({
     transparent: true,
@@ -83,6 +85,9 @@ export function stockingMaterial() {
       uGradMid: { value: 0.6 },
       uGradW: { value: 0.25 },
       uGradFlip: { value: 0 },
+      uStrap: { value: 0 },
+      uStrapColor: { value: new THREE.Color('#15151a') },
+      uStrapSpan: { value: new THREE.Vector2(0.45, 0.78) },
     },
     vertexShader: commonVert + /* glsl */`
       attribute vec4 aFab;
@@ -102,6 +107,9 @@ export function stockingMaterial() {
       uniform int uPattern, uBand, uGrad;
       uniform vec3 uGradColor;
       uniform float uGradMid, uGradW, uGradFlip;
+      uniform int uStrap;
+      uniform vec3 uStrapColor;
+      uniform vec2 uStrapSpan;
       uniform sampler2D uPatTex;
       uniform vec2 uToe, uOff;
       varying vec4 vFab;
@@ -182,6 +190,38 @@ export function stockingMaterial() {
             base *= 0.9;
             if (bu > bandW - 0.004) base *= 0.75;           // seam line under the welt
           }
+        }
+        // straps: not on fabric rolled up at the welt
+        float ribbon = 0.0, rShade = 1.0;
+        if (uStrap > 0 && rolled < 0.5 && u > uStrapSpan.x - 0.01 && u < uStrapSpan.y + 0.01) {
+          const float P = 0.16, W = 0.0045;               // one turn per 16 cm, ribbons 9 mm wide
+          float x = atan(vFab.z, vFab.y) / 6.2832;        // -0.5..0.5 round the leg, 0 at the front
+          float du = uStrapSpan.y - u;                    // from the ankle up, so an X sits just above it
+          // distance (m) to the nearest ribbon of each helix: f is whole along a ribbon; its gradient
+          // over (arc length, u) turns the fraction into metres
+          float g = length(vec2(2.0 / (6.2832 * max(vFab.w, 0.02)), 1.0 / P));
+          float f1 = 2.0 * x + du / P, f2 = 2.0 * x - du / P;
+          float inside = step(uStrapSpan.x, u) * step(u, uStrapSpan.y);
+          float d1 = mix(1.0, abs(fract(f1 + 0.5) - 0.5) / g, inside);
+          float d2 = mix(1.0, abs(fract(f2 + 0.5) - 0.5) / g, inside);
+          float dRing = min(abs(u - uStrapSpan.x), abs(u - uStrapSpan.y));
+          // which helix lies on top swaps from one crossing to the next, like real lacing; the end
+          // ribbons lie on top of both
+          bool oneUp = mod(floor(f1 + 0.5) + floor(f2 + 0.5), 2.0) < 0.5;
+          float dUp = oneUp ? d1 : d2, dDown = oneUp ? d2 : d1;
+          float d = dRing < W ? dRing : dUp < W ? dUp : dDown;
+          float under = dRing < W ? 1.0 : min(dRing, dUp);         // what casts a shadow on this ribbon
+          float near = min(dRing, min(d1, d2));
+          float fw = max(fwidth(du), 1e-5);
+          ribbon = 1.0 - smoothstep(W - fw, W + fw, d);
+          // satin: lighter down the middle, darker at the edges, in shadow next to the ribbon above
+          float prof = d / W;
+          vec3 rc = uStrapColor * (0.8 + 0.35 * (1.0 - prof * prof)) * mix(1.0, 0.65, smoothstep(0.75, 1.0, prof));
+          if (d == dDown && dRing >= W) rc *= mix(0.6, 1.0, smoothstep(W, W + 0.002, under));
+          // the fabric right beside a ribbon is pressed in and shaded
+          rShade = mix(0.62, 1.0, smoothstep(W, W + 0.0025, near));
+          base = mix(base * rShade, rc, ribbon);
+          a = mix(max(a, 1.0 - rShade), 0.98, ribbon);
         }
         a = mix(a, 0.97, rolled);
         if (a < 0.01) discard;

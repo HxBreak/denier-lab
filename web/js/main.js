@@ -26,6 +26,7 @@ const state = {
   patternId: null,                         // with pattern 3: which generated mask (web/patterns/)
   tight: 0.5,                              // how hard the welt clings to the leg (rig.tight)
   grad: 0, gradColor: '#6e1f2e', gradPos: 0.5, flip: 0,   // gradient: 0 off, 1 colour, 2 sheerness (see toon.js)
+  strap: 0, strapColor: '#15151a',         // criss-cross ribbons: 0 off, 1 ankle, 2 calf, 3 up to the welt
   outline: 1,                              // 2 outline meshes, 1 soft edge in the shaders, 0 none
   focus: 0,                                // which leg is shown: 0 left (+x), 1 right
   shot: 0,                                 // camera framing, see SHOTS
@@ -161,7 +162,7 @@ function setColor(hex) {
 document.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => setColor(b.dataset.color)));
 $('color').addEventListener('input', e => setColor(e.target.value));
 
-const SEGS = { band: 'uBand', outline: null, grad: 'uGrad', flip: 'uGradFlip' };
+const SEGS = { band: 'uBand', outline: null, grad: 'uGrad', flip: 'uGradFlip', strap: 'uStrap' };
 function setSeg(name, v) {
   state[name] = v;
   if (SEGS[name]) stock.uniforms[SEGS[name]].value = v;
@@ -169,6 +170,8 @@ function setSeg(name, v) {
   state.dirty = true;
   document.querySelectorAll(`[data-${name}]`).forEach(x => x.classList.toggle('on', +x.dataset[name] === v));
   if (name === 'grad') { $('grad-opts').hidden = !v; $('grad-color-row').hidden = v !== 1; }
+  if (name === 'strap') $('strap-opts').hidden = !v;
+  if (name === 'strap' || name === 'band') strapSpan();
   refreshInfo();
 }
 const GRAD_NAMES = Object.fromEntries([...document.querySelectorAll('[data-gcolor]')].map(b => [b.dataset.gcolor, b.title]));
@@ -181,6 +184,24 @@ function setGradColor(hex) {
   refreshInfo();
 }
 document.querySelectorAll('[data-gcolor]').forEach(b => b.addEventListener('click', () => setGradColor(b.dataset.gcolor)));
+const STRAP_NAMES = ['', '脚踝', '小腿', '整条'];
+function setStrapColor(hex) {
+  state.strapColor = hex;
+  stock.uniforms.uStrapColor.value.set(hex);
+  $('scolor').value = hex;
+  document.querySelectorAll('[data-scolor]').forEach(x => x.classList.toggle('on', x.dataset.scolor === hex));
+  state.dirty = true;
+}
+document.querySelectorAll('[data-scolor]').forEach(b => b.addEventListener('click', () => setStrapColor(b.dataset.scolor)));
+$('scolor').addEventListener('input', e => setStrapColor(e.target.value));
+// where the straps run (u): always ending just above the ankle; starting above it, below the knee, or
+// under the welt, and never on the welt itself
+function strapSpan() {
+  const knee = (info.l.knee + info.r.knee) / 2, ankle = (info.l.ankle + info.r.ankle) / 2;
+  const below = state.top + (state.band ? 0.075 : 0.02);
+  const from = [0, ankle - 0.13, knee + 0.05, below][state.strap] || below;
+  stock.uniforms.uStrapSpan.value.set(Math.min(Math.max(from, below), ankle - 0.05), ankle - 0.012);
+}
 $('gcolor').addEventListener('input', e => setGradColor(e.target.value));
 for (const name of Object.keys(SEGS))
   document.querySelectorAll(`[data-${name}]`).forEach(b => b.addEventListener('click', () => setSeg(name, +b.dataset[name])));
@@ -259,6 +280,7 @@ function apply() {
   const toe = (rig.uEnd[0] + rig.uEnd[1]) / 2;
   u.uGradMid.value = state.top + state.gradPos * (toe - state.top);
   u.uGradW.value = 0.4 * (toe - state.top);
+  strapSpan();
   // a stocking that is still on moves with the length slider; a half-removed one keeps its welt
   for (let s = 0; s < 2; s++) {
     if (state.off[s] || state.anim[s]) continue;
@@ -287,6 +309,8 @@ const PRESETS = [
   { name: '焦糖豹纹', color: '#4a2c1c', denier: 25, gloss: 0.3, pattern: 'leopard', band: 1, top: 0.3 },
   { name: '黑红渐变', color: '#1b1b22', denier: 40, gloss: 0.3, pattern: 0, band: 1, top: 0.3, grad: 1, gradColor: '#6e1f2e', gradPos: 0.55 },
   { name: '渐变透肤', color: '#1b1b22', denier: 90, gloss: 0.25, pattern: 0, band: 2, top: 0.3, grad: 2, gradPos: 0.45 },
+  { name: '白丝黑绑带', color: '#f2efea', denier: 30, gloss: 0.3, pattern: 0, band: 1, top: 0.4, strap: 2, strapColor: '#15151a' },
+  { name: '黑丝酒红绑带', color: '#1b1b22', denier: 20, gloss: 0.35, pattern: 0, band: 2, top: 0.3, strap: 3, strapColor: '#7a1f33' },
 ].filter(p => typeof p.pattern === 'number' || PATTERNS[p.pattern]);
 const coverage = d => 1 - Math.exp(-d / 55);
 const mixHex = (a, b, t) => '#' + [0, 2, 4].map(i => Math.round(parseInt(a.substr(1 + i, 2), 16) * (1 - t) + parseInt(b.substr(1 + i, 2), 16) * t).toString(16).padStart(2, '0')).join('');
@@ -310,6 +334,7 @@ for (const p of PRESETS) {
   const b = document.createElement('button'), gen = PATTERNS[p.pattern];
   const flat = (c, d) => mixHex(SKIN, c, coverage(d));
   const look = gen ? ` class="pat" style="--c:${p.color};--m:url(${gen.file});background:${swatch(p.color, p.denier * gen.base)}"`
+    : p.strap ? ` style="background:repeating-linear-gradient(30deg, transparent 0 7px, ${p.strapColor} 7px 9px), repeating-linear-gradient(-30deg, transparent 0 7px, ${p.strapColor} 7px 9px), ${swatch(p.color, p.denier)}"`
     : p.grad === 1 ? ` style="background:linear-gradient(180deg, ${flat(p.color, p.denier)} 30%, ${flat(p.gradColor, p.denier)} 75%)"`
     : p.grad === 2 ? ` style="background:linear-gradient(180deg, ${flat(p.color, p.denier)} 25%, ${flat(p.color, p.denier * 0.18)} 70%)"`
     : ` style="background:${swatch(p.color, p.denier, p.pattern)}"`;
@@ -318,6 +343,8 @@ for (const p of PRESETS) {
     setColor(p.color); setPattern(String(p.pattern)); setSeg('band', p.band);
     setSeg('grad', p.grad || 0); setSeg('flip', 0); setRange('gradPos', p.gradPos ?? 0.5);
     if (p.gradColor) setGradColor(p.gradColor);
+    setSeg('strap', p.strap || 0);
+    if (p.strapColor) setStrapColor(p.strapColor);
     setRange('denier', p.denier); setRange('gloss', p.gloss); setRange('top', p.top);
   };
   $('presets').appendChild(b);
@@ -328,7 +355,8 @@ function refreshInfo() {
   const kind = state.pattern === 1 ? '网眼' : state.pattern === 2 ? '条纹' : gen ? gen.name : '';
   const band = state.band === 2 ? '蕾丝边' : '';
   const grad = state.grad === 1 ? `→${GRAD_NAMES[state.gradColor] || '自定义色'}渐变` : state.grad === 2 ? '渐变透' : '';
-  $('spec-name').textContent = `${state.denier}D ${name}${grad}${band}${kind}${lengthLabel(state.top)}`;
+  const strap = state.strap ? `${STRAP_NAMES[state.strap]}绑带` : '';
+  $('spec-name').textContent = `${state.denier}D ${name}${grad}${band}${kind}${strap}${lengthLabel(state.top)}`;
   $('spec-denier').textContent = `${state.denier}D · ${denierLabel(state.denier)}`;
   const sheer = state.pattern === 1 ? 85 : Math.round((1 - coverage(state.denier * (gen ? gen.base : 1))) * (gen ? 75 : 100));
   $('spec-sheer').textContent = `${sheer}%`;
