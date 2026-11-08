@@ -2,8 +2,8 @@
 //   rustle   nylon sliding over skin while the welt moves: airy noise plus tiny fibre crackles,
 //            louder and brighter the faster the fabric moves
 //   stretch  the welt being pulled off the leg: a rising hiss and a rubbery creak while the pull changes
-//   snap     the welt slapping back onto the leg when let go, once per bounce: a recorded elastic band click
-//            (web/sfx/snap.mp3, CC0, see web/sfx/SOURCES.md), synthesised until the file has loaded
+//   snap     the welt slapping back onto the leg when let go, once per bounce: one of five recorded slaps on
+//            skin (web/sfx/snap.mp3, CC0, see web/sfx/SOURCES.md), synthesised until the file has loaded
 //   grab, off (slides off the toes), on (slides back up the leg)
 // Browsers only allow audio after a click or touch, so nothing plays before the first one.
 // Volume (0..1) is a panel slider; it starts at half, and both it and on/off are remembered in this browser.
@@ -61,7 +61,7 @@ export class Sfx {
     this.creakOsc.connect(this.creak.input);
     this.creakOsc.start();
 
-    // the recorded snap: one file, any hits in it separated by silence (one now); this.loaded settles either way
+    // the recorded snaps: one file, the hits separated by silence; this.loaded settles either way
     this.slaps = null;
     this.loaded = fetch(SNAP_URL).then(r => r.arrayBuffer())
       .then(b => new Promise((ok, fail) => ctx.decodeAudioData(b, ok, fail)))
@@ -111,8 +111,8 @@ export class Sfx {
   }
 
   // the welt slapping back onto the skin (strength 0..1). Comments said the synthesised one was startling
-  // and then that it sounded like a drum (its pitched thump), so it is now a recorded elastic band
-  // click (a random hit if the file holds several, never the same twice running), its pitch varied
+  // and then that it sounded like a drum (its pitched thump), so it is now a recorded slap on skin
+  // (a random one of five, never the same twice running), its pitch varied
   // between -3% and +12% so repeats do not sound identical (never much lower: slower is duller), and
   // louder the harder it hits. No filtering: a strength-dependent low-pass (most bounces are 0.3..0.9)
   // made it sound muffled. Kept around the level of the drag sounds.

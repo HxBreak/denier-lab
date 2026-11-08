@@ -11,7 +11,7 @@ import fs from 'fs';
 import { execFileSync } from 'child_process';
 const url = process.argv[2] || 'http://127.0.0.1:8090/';
 const MODE = process.env.SNAP_MODE || 'all';
-const OUT = MODE === 'all' ? OUT : `shots/snap-live-${MODE}.webm`;
+const OUT = MODE === 'all' ? 'shots/snap-live.webm' : `shots/snap-live-${MODE}.webm`;
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: 'new', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
@@ -34,8 +34,8 @@ await page.evaluate(async mode => {
   window.__chunks = [];
   const rec = window.__rec = new MediaRecorder(dest.stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 192000 });
   rec.ondataavailable = e => __chunks.push(e.data);
-  rec.start();
-  window.__t0 = performance.now();
+  // times are measured from when the recorder really starts, so they line up with the recording
+  await new Promise(ok => { rec.onstart = () => { window.__t0 = performance.now(); ok(); }; rec.start(); });
 }, MODE);
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const top = await page.evaluate(() => __dl.state.top);
@@ -85,9 +85,7 @@ for (const p of pulls) {
 // the recording: level and brightness around each snap that fired
 const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', OUT, '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'], { maxBuffer: 1 << 28 });
 const d = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4), sr = 48000;
-// MediaRecorder starts a little after __t0: line the first loud spot up with the first snap
-let first = d.findIndex(v => Math.abs(v) > 0.003);
-const offset = first / sr - pulls[0].fired[0]?.t;
+const offset = 0;                                   // __t0 is the recorder's start event
 console.log(`recording: ${(d.length / sr).toFixed(1)} s, ${fs.statSync(OUT).size} bytes, shots/snap-live.webm`);
 for (const f of pulls.flatMap(p => p.fired)) {
   const a = Math.max(0, Math.round((f.t + offset - 0.02) * sr)), b = Math.min(d.length, a + Math.round(0.2 * sr));
