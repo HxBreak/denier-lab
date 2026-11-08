@@ -1,20 +1,20 @@
 #!/bin/zsh
-# Deploy Denier Lab to https://jp.thinnking.shop/denier/ (Tokyo VM, Caddy serves /srv/denier/current).
-# Same scheme as the rain page (machine notes not in this repo): each deploy is a new timestamped release and
-# /srv/denier/current is switched atomically; older releases are kept.
+# Deploy Denier Lab to a web server that serves /srv/denier/current at https://<DEPLOY_HOST>/denier/.
+# Each deploy is a new timestamped release and /srv/denier/current is switched atomically; older
+# releases are kept.
 #   rollback: ssh in and `sudo ln -sfn /srv/denier/releases/<older> /srv/denier/current`
-# The Caddy block that serves /denier/ was added by hand once (backup /etc/caddy/Caddyfile.pre-denier-*).
+# Where to deploy comes from tools/deploy.env, which is not in git: copy tools/deploy.env.example.
 #
 # Three steps, each retried on its own because the VM's sshd now and then drops a connection during
 # key exchange (2026-10-25), and each safe to repeat:
 #   1. upload into a scratch dir, check the key files, then rename it to the release dir
 #   2. switch `current` to it (temporary link + rename, which is atomic)
-#   3. fetch the key URLs through Caddy; if any fails, switch back to the previous release
+#   3. fetch the key URLs through the web server; if any fails, switch back to the previous release
 set -euo pipefail
 ROOT=${0:A:h:h}
-# reach the server through a jump host
-VM=(ssh -i ~/.ssh/<your-key> -o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=15
-    -J <jump-user>@<jump-host> <user>@<server>)
+[[ -f $ROOT/tools/deploy.env ]] || { echo "tools/deploy.env is missing: copy tools/deploy.env.example and fill it in"; exit 1; }
+source $ROOT/tools/deploy.env
+VM=("${DEPLOY_SSH[@]}")
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 BASE=/srv/denier
 REL=$BASE/releases/$TS
@@ -63,7 +63,7 @@ CHECK="set -uo pipefail
 bad=0
 for f in '' ${FILES[*]}; do
   u=/denier/\$f
-  code=\$(curl -s -o /dev/null -w '%{http_code}' --resolve jp.thinnking.shop:443:127.0.0.1 https://jp.thinnking.shop\$u)
+  code=\$(curl -s -o /dev/null -w '%{http_code}' --resolve $DEPLOY_HOST:443:127.0.0.1 https://$DEPLOY_HOST\$u)
   printf '%-46s %s\n' \$u \$code
   [ \"\$code\" = 200 ] || bad=1
 done
@@ -75,4 +75,4 @@ if ! remote "$CHECK"; then
   fi
   exit 1
 fi
-echo "deployed release $TS -> https://jp.thinnking.shop/denier/"
+echo "deployed release $TS -> https://$DEPLOY_HOST/denier/"

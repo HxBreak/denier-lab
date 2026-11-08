@@ -12,7 +12,7 @@
 | 角色 | 成年女性（MPFB/MakeHuman，age 0.6，约 31 岁） |
 | 交互 | 调颜色、厚度（D 数）、光泽、袜长、花纹、袜口；**像手指勾住袜口一样往下拉**：手指所在的一侧先滑下，其他部分被袜口带着、落后并卷起，拉过脚尖才脱下；往回拉时整圈袜口立刻跟着上来；**往腿外侧拖能把袜口拉离腿面**，接触点跟着手指滑动，松手弹回；合成音效（可关） |
 | 风格 | 先做卡通（已完成），再做写实 |
-| 发布 | 公网：https://jp.thinnking.shop/denier/ （东京 VM，`tools/deploy.sh`）；局域网：`./serve.sh`，访问 `http://<LAN-IP>:8090/` |
+| 发布 | 公网：https://jp.thinnking.shop/denier/ （东京 VM，`tools/deploy.sh`）；局域网：`./serve.sh`，访问 `http://<这台电脑的局域网 IP>:8090/` |
 
 ## 2. 目录
 
@@ -53,7 +53,7 @@ denier-lab/
 node tools/shoot.mjs             # 截图（需要 serve.sh 在运行）
 node tools/drag-test.mjs         # 交互测试
 node tools/perf.mjs              # 性能
-./tools/deploy.sh                # 发布到公网
+./tools/deploy.sh                # 发布到公网（先把 tools/deploy.env.example 复制成 tools/deploy.env 填上服务器）
 ```
 
 ## 3. 技术方案
@@ -176,7 +176,7 @@ node tools/perf.mjs              # 性能
 
 ### 3.4b 生成的花纹（`tools/gen_patterns.py`、`toon.js` 的 `uPattern == 3`）
 - 花纹是一张方形、可无缝平铺的**遮罩**：白色图案、黑色底。着色器拿它的 alpha 当“这里有不透明的图案”，颜色用丝袜本身的颜色，所以一张遮罩所有颜色都能用。
-- 生成（自己搭的生图服务，Nano Banana，guest 模式，经 SSH 隧道；机器信息不在本仓库）：
+- 生成（自己搭的生图服务，Nano Banana，guest 模式，经 SSH 隧道；服务所在的主机用环境变量 `PATTERN_SSH_HOST` 指定）：
   1. 给它一张纯黑的方形画布，让它铺满一个可平铺的图案（白色图案、纯黑底、平面、无渐变）。用参考图是因为这个模型在文生图时不管要求的尺寸，图生图会保持参考图的形状。
   2. 把结果平移半张，让原来的四条边在中间交成一个十字，再让它只修这个十字（被切开的图案要补成一个完整的，不要“碎的”）。
   3. 只从修好的图里取十字附近的一条带，带的两条边沿着两张图差别最小的路径走（图像拼接里的最小误差切割），所以不会把图案切开或叠出重影；带外面保持原样，原来的边仍然严丝合缝。
@@ -263,9 +263,9 @@ node tools/perf.mjs              # 性能
   - 生成时碰到 guest 账号限流（429）和上游断连：脚本改成按服务器给的间隔等待后重试、并发降到 2。10 个花纹共用了二十来分钟。
   - AI 出的图一张里本身就有很多个图案，绕腿重复次数（around）要看图手调，目标是小腿上图案 2–3 cm。
   - 测试：`pattern-shots.mjs` 把 13 种花纹都穿在小腿上截图，背面没有接缝；`shoot.mjs`、`drag-test.mjs` 没有页面错误。
-- 发布到公网 https://jp.thinnking.shop/denier/ （东京 VM，和雨林页面同一套做法）：
+- 发布到公网 https://jp.thinnking.shop/denier/ （东京的云服务器）：
   - 文件放在 `/srv/denier/releases/<UTC 时间戳>/`，`/srv/denier/current` 指向当前版本；每次发布是新的一版，旧版保留。回滚：`sudo ln -sfn /srv/denier/releases/<旧版> /srv/denier/current`。
-  - Caddy 在 `jp.thinnking.shop` 里加了 `/denier/` 一段（放在雨林那段后面）：页面和 js 不缓存，模型、花纹和 three.js 缓存 1 小时。改之前备份为 `<backup>`，先 `caddy validate` 再装上、`reload`；雨林等其他页面没受影响。
+  - Caddy 在 `jp.thinnking.shop` 里加了 `/denier/` 一段（放在雨林那段后面）：页面和 js 不缓存，模型、花纹和 three.js 缓存 1 小时。改之前先备份，`caddy validate` 再装上、`reload`；雨林等其他页面没受影响。
   - 第一版：`20261025T030310Z`。`drag-test.mjs` 对公网地址跑了一遍，结果和本地一样，没有页面错误。
   - 东京 VM 的 sshd 现在时不时在密钥交换阶段直接断开连接（大概是公网上扫描的连接太多，触发了 sshd 的并发限制），重试几次就能连上，所以 `deploy.sh` 会自动重试。
 - 代码审查（Codex，模型 gpt-6.1-sol，只读）提了 14 条，逐条核实后全部修掉：

@@ -3,3 +3,5 @@ shots/
 ._*
 .DS_Store
 __pycache__/
+# local deploy settings (server, user, key): see tools/deploy.env.example
+tools/deploy.env

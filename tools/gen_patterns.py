@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Stocking patterns made with an image service (Nano Banana, preset 'flash-image'; machine notes not in this repo).
+Stocking patterns made with an image service (Nano Banana, preset 'flash-image', guest-mode HTTP API),
+reached through an SSH tunnel: set PATTERN_SSH_HOST to the host it runs on (and PATTERN_REMOTE if it does
+not listen on 127.0.0.1:4600 there).
 
 Each pattern is a square, seamlessly tiling mask: white motif on black. The shader tints it with the
 stocking colour, so one mask works in every colour.
@@ -26,7 +28,9 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, "patterns", "raw")
 OUT = os.path.join(ROOT, "web", "patterns")
-SSH_HOST, LOCAL_PORT, REMOTE = "<image-host>", 14601, "127.0.0.1:4600"
+SSH_HOST = os.environ.get("PATTERN_SSH_HOST", "")
+LOCAL_PORT = int(os.environ.get("PATTERN_LOCAL_PORT", 14601))
+REMOTE = os.environ.get("PATTERN_REMOTE", "127.0.0.1:4600")
 PRESET = "flash-image"
 SIZE = 1024
 
@@ -70,7 +74,7 @@ PATTERNS = {
 }
 
 
-# ---------- image service (guest mode; same calls as <private tool>) ----------
+# ---------- the image service (guest mode: precheck the prompt, then generate) ----------
 class Service:
     def __init__(self):
         self.base = f"http://127.0.0.1:{LOCAL_PORT}"
@@ -154,6 +158,8 @@ class Retry(RuntimeError):
 
 
 def open_tunnel():
+    if not SSH_HOST:
+        raise SystemExit("set PATTERN_SSH_HOST to the host the image service runs on")
     proc = subprocess.Popen(["ssh", "-N", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
                              "-o", "ExitOnForwardFailure=yes", "-L", f"{LOCAL_PORT}:{REMOTE}", SSH_HOST])
     for _ in range(75):
@@ -162,10 +168,10 @@ def open_tunnel():
             return proc
         except OSError:
             if proc.poll() is not None:
-                raise RuntimeError("ssh tunnel to the image host failed")
+                raise RuntimeError(f"ssh tunnel to {SSH_HOST} failed")
             time.sleep(.2)
     proc.terminate()
-    raise RuntimeError("ssh tunnel to the image host did not come up")
+    raise RuntimeError(f"ssh tunnel to {SSH_HOST} did not come up")
 
 
 # ---------- image steps ----------
