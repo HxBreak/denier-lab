@@ -18,7 +18,7 @@ VM=("${DEPLOY_SSH[@]}")
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 BASE=/srv/denier
 REL=$BASE/releases/$TS
-FILES=(index.html style.css js/main.js js/stocking.js js/toon.js js/sound.js models/legs.glb models/legs.json
+FILES=(index.html style.css js/main.js js/stocking.js js/toon.js js/sound.js js/custom.js models/legs.glb models/legs.json
        patterns/patterns.json vendor/three/build/three.module.js sfx/snap.mp3
        vendor/three/jsm/loaders/DRACOLoader.js vendor/three/jsm/libs/draco/gltf/draco_decoder.wasm
        vendor/three/jsm/libs/draco/gltf/draco_wasm_wrapper.js)

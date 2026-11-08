@@ -36,6 +36,7 @@ denier-lab/
   tools/perf.mjs          每帧丝袜变形的 CPU 耗时（几种状态）
   tools/lod-check.mjs     同一画面开/关“看不见的地方粗算”各渲染一次，比较像素差（差异区域放大图 shots/lod-*.png）
   tools/sound-check.mjs   离线渲染每个音效，打印峰值和响度；再点一下页面确认音频能启动
+  tools/custom-check.mjs  自定义贴图：在浏览器里生成四张测试图，经文件输入框选进花纹、袜口、绑带、背景，切换两种用法和反相、刷新、清除（可以对线上地址跑）
   tools/snap-live-check.mjs  用真实鼠标拉开袜口再松手（小、中、大三次），记下触发了哪些回弹声、力度多少、用的是录音还是合成，并把页面实际输出的声音录成 shots/snap-live.webm（可以对线上地址跑）
   tools/gen_patterns.py   用 op5 的生图接口生成花纹遮罩 → web/patterns/（原图在 patterns/raw/），总览 shots/patterns-sheet.png
   tools/pattern-shots.mjs 每个花纹穿在腿上截一张 → shots/patterns-on-leg.png
@@ -162,7 +163,7 @@ node tools/perf.mjs              # 性能
 - 绑带（`uStrapTexMode` 1/2）：图片沿缎带方向平铺（每块长 = 带宽 × 宽高比），横向对着带宽；只取形状时没有图案的地方缎带是空的。选图时如果绑带是关的，会自动打开“小腿”。
 - 展示框背景：直接设为展示框的 CSS 背景（cover），画布本来就是透明的。
 - 刷新后：背景直接显示；花纹和袜口作为可选项回到列表里，但不自动选中（其他设置本来也不保存）。
-- 测试（临时脚本，没有留在 tools/）：用 PIL 生成白底黑星、彩虹条纹、透明底蕾丝、粉底白点和渐变背景五张图，经文件输入框依次选进四处、切换两种用法、刷新、清除，截图检查，没有页面错误。
+- 测试：`tools/custom-check.mjs`（截图 shots/custom-*.png），本地和线上都通过。
 
 ### 3.4a 腿部细节：膝盖线条和高光带（`toon.js` 的 `detailChunk`）
 小红书评论里有人说“膝盖没有线条”“建模再精细点”“质感有点拉完了”。这两样都只改着色器、不动模型，面板“风格”里各有一个开关，默认开。
