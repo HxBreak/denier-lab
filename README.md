@@ -36,6 +36,7 @@ denier-lab/
   tools/perf.mjs          每帧丝袜变形的 CPU 耗时（几种状态）
   tools/lod-check.mjs     同一画面开/关“看不见的地方粗算”各渲染一次，比较像素差（差异区域放大图 shots/lod-*.png）
   tools/sound-check.mjs   离线渲染每个音效，打印峰值和响度；再点一下页面确认音频能启动
+  tools/snap-live-check.mjs  用真实鼠标拉开袜口再松手（小、中、大三次），记下触发了哪些回弹声、力度多少、用的是录音还是合成，并把页面实际输出的声音录成 shots/snap-live.webm（可以对线上地址跑）
   tools/gen_patterns.py   用 op5 的生图接口生成花纹遮罩 → web/patterns/（原图在 patterns/raw/），总览 shots/patterns-sheet.png
   tools/pattern-shots.mjs 每个花纹穿在腿上截一张 → shots/patterns-on-leg.png
   tools/outline-compare.mjs  几个场景 × 几种轮廓画法并排对比 → shots/outline-compare.png 和局部放大图（排版用 tools/outline-grid.py，需要 Pillow）
