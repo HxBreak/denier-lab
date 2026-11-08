@@ -17,10 +17,12 @@ await page.goto(process.argv[2] || 'http://127.0.0.1:8090/', { waitUntil: 'load'
 await page.waitForFunction('window.__dl');
 const res = await page.evaluate(async () => {
   const { Sfx } = await import('./js/sound.js');
-  const render = async (secs, play) => {
+  const render = async (name, secs, play) => {
     const ctx = new OfflineAudioContext(1, 44100 * secs, 44100), sfx = new Sfx();
     sfx.on = true;
     sfx.unlock(ctx);
+    await sfx.loaded;                      // the recorded snap (web/sfx/snap.mp3)
+    if (/snap/.test(name) && !sfx.slaps) throw new Error('snap.mp3 did not load');
     play(sfx);
     const d = (await ctx.startRendering()).getChannelData(0);
     let peak = 0, sum = 0;
@@ -39,7 +41,7 @@ const res = await page.evaluate(async () => {
     ['stretch, pulling out', 1, s => s.update(0.1, 0.8, 1.5)],
     ['held still', 1, s => s.update(0, 0.8, 0)],
     ['silent (nothing moving)', 1, s => s.update(0, 0, 0)],
-  ].reduce(async (acc, [name, secs, fn]) => [...await acc, `${name.padEnd(24)} ${await render(secs, fn)}`], []);
+  ].reduce(async (acc, [name, secs, fn]) => [...await acc, `${name.padEnd(24)} ${await render(name, secs, fn)}`], []);
 });
 console.log(res.join('\n'));
 // the real thing, under the default autoplay policy: nothing before a click, running after it

@@ -2,11 +2,13 @@
 //   rustle   nylon sliding over skin while the welt moves: airy noise plus tiny fibre crackles,
 //            louder and brighter the faster the fabric moves
 //   stretch  the welt being pulled off the leg: a rising hiss and a rubbery creak while the pull changes
-//   snap     the welt slapping back onto the leg when let go, once per bounce
+//   snap     the welt slapping back onto the leg when let go, once per bounce: a recorded elastic band click
+//            (web/sfx/snap.mp3, CC0, see web/sfx/SOURCES.md), synthesised until the file has loaded
 //   grab, off (slides off the toes), on (slides back up the leg)
 // Browsers only allow audio after a click or touch, so nothing plays before the first one.
 // Volume (0..1) is a panel slider; it starts at half, and both it and on/off are remembered in this browser.
 const PREF = 'denier-lab.sound', VOL = 'denier-lab.volume';
+const SNAP_URL = new URL('../sfx/snap.mp3', import.meta.url);
 
 export class Sfx {
   constructor() {
@@ -51,6 +53,13 @@ export class Sfx {
     this.creakOsc.connect(this.creak.input);
     this.creakOsc.start();
 
+    // the recorded snap: one file, any hits in it separated by silence (one now); this.loaded settles either way
+    this.slaps = null;
+    this.loaded = fetch(SNAP_URL).then(r => r.arrayBuffer())
+      .then(b => new Promise((ok, fail) => ctx.decodeAudioData(b, ok, fail)))
+      .then(buf => { this.slaps = splitHits(buf); })
+      .catch(() => { /* keep the synthesised snap */ });
+
     if (!offline) document.addEventListener('visibilitychange', () => {
       if (document.hidden) ctx.suspend(); else ctx.resume();
     });
@@ -93,12 +102,29 @@ export class Sfx {
     this.creakOsc.frequency.setTargetAtTime(28 + 70 * tension + 10 * Math.random(), t, 0.03);
   }
 
-  // the welt slapping back onto the skin (strength 0..1): a soft, bright elastic snap with only a
-  // light thump under it. Kept well below the drag sounds: a comment said the old, boomy one
-  // (a 160 -> 60 Hz thump) was startling, so no deep low end and no instant attack
+  // the welt slapping back onto the skin (strength 0..1). Comments said the synthesised one was startling
+  // and then that it sounded like a drum (its pitched thump), so it is now a recorded elastic band
+  // click (a random hit if the file holds several, never the same twice running), its pitch varied by
+  // up to +-9% so repeats do not sound identical, louder and brighter the harder it hits. Kept below
+  // the drag sounds.
   snap(strength) {
     if (!this._ready() || strength < 0.04) return;
     const ctx = this.ctx, t = ctx.currentTime, s = Math.min(1, strength);
+    if (this.slaps) {
+      let i = Math.floor(Math.random() * this.slaps.length);
+      if (this.slaps.length > 1 && i === this._lastSlap) i = (i + 1) % this.slaps.length;
+      this._lastSlap = i;
+      const src = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = this.slaps[i];
+      src.playbackRate.value = 0.91 + Math.random() * 0.18;
+      lp.type = 'lowpass';
+      lp.frequency.value = 2500 + 12000 * s;      // soft bounces are duller
+      g.gain.value = 0.8 * Math.pow(s, 0.9);
+      src.connect(lp).connect(g).connect(this.master);
+      src.start(t);
+      return;
+    }
+    // not loaded (yet): a synthesised slap, noise only (no pitched thump: that is what sounded like a drum)
     const slap = this._burst(0.08, [['highpass', 1100, 0.7], ['peaking', 3800 + 1800 * s, 1.2, 6]]);
     slap.gain.setValueAtTime(0, t);
     slap.gain.linearRampToValueAtTime(0.5 * s, t + 0.004);
@@ -107,15 +133,6 @@ export class Sfx {
     const click = this._burst(0.01, [['highpass', 4500, 0.7]]);
     click.gain.setValueAtTime(0.25 * s, t);
     click.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
-    // and a short, light thump of the leg under it
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.setValueAtTime(240, t);
-    o.frequency.exponentialRampToValueAtTime(110, t + 0.06);
-    g.gain.setValueAtTime(0.12 * s, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-    o.connect(g).connect(this.master);
-    o.start(t);
-    o.stop(t + 0.08);
   }
 
   // a finger hooking under the welt
@@ -208,4 +225,27 @@ export class Sfx {
     src.start(t, Math.random() * 1.5);
     src.stop(t + dur + 0.05);
   }
+}
+
+// Split a recording into its hits: runs of sound separated by at least 60 ms below -40 dB of the peak.
+function splitHits(buf) {
+  const d = buf.getChannelData(0), sr = buf.sampleRate, n = d.length;
+  let peak = 0;
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(d[i]));
+  const thr = peak * 0.01, gap = Math.round(0.06 * sr), pad = Math.round(0.002 * sr), hits = [];
+  let start = -1, quiet = 0;
+  for (let i = 0; i <= n; i++) {
+    const loud = i < n && Math.abs(d[i]) > thr;
+    if (loud) { if (start < 0) start = i; quiet = 0; }
+    else if (start >= 0 && (++quiet >= gap || i === n)) {
+      const a = Math.max(0, start - pad), b = Math.min(n, i - quiet + pad);
+      if (b - a > 0.02 * sr) {
+        const out = new AudioBuffer({ length: b - a, numberOfChannels: 1, sampleRate: sr });
+        out.copyToChannel(d.slice(a, b), 0);
+        hits.push(out);
+      }
+      start = -1; quiet = 0;
+    }
+  }
+  return hits.length ? hits : null;
 }
