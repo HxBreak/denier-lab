@@ -26,6 +26,7 @@ const state = {
   color: '#1b1b22', denier: 20, gloss: 0.35, pattern: 0, band: 2, top: 0.3,
   patternId: null,                         // with pattern 3: which generated mask (web/patterns/)
   tight: 0.5,                              // how hard the welt clings to the leg (rig.tight)
+  bounce: 0.2,                             // how much a welt let go bounces off the leg: restitution 0.45 * bounce
   grad: 0, gradColor: '#6e1f2e', gradPos: 0.5, flip: 0,   // gradient: 0 off, 1 colour, 2 sheerness (see toon.js)
   strap: 0, strapColor: '#15151a',         // criss-cross ribbons: 0 off, 1 ankle, 2 calf, 3 up to the welt
   knee: 1, shine: 1,                       // leg details (toon.js): knee lines, shine strip
@@ -144,11 +145,13 @@ const denierLabel = d => d < 20 ? '超薄透' : d < 40 ? '薄透' : d < 70 ? '�
 const glossLabel = g => g < 0.15 ? '哑光' : g < 0.55 ? '柔光' : '亮面';
 const lengthLabel = t => t < 0.33 ? '大腿袜' : t < 0.45 ? '过膝袜' : '及膝袜';
 const tightLabel = t => t < 0.3 ? '松' : t < 0.7 ? '适中' : t < 0.95 ? '紧' : '最紧';
+const bounceLabel = b => b < 0.05 ? '不弹' : b < 0.35 ? '轻微' : b < 0.7 ? '有弹性' : '很弹';
 const ranges = {
   denier: d => `${d}D · ${denierLabel(d)}`,
   gloss: glossLabel,
   top: lengthLabel,
   tight: tightLabel,
+  bounce: bounceLabel,
   gradPos: p => p < 0.3 ? '靠上' : p < 0.7 ? '中间' : '靠下',
 };
 for (const [id, fmt] of Object.entries(ranges)) {
@@ -552,13 +555,15 @@ function stepFinger(thick, dt) {
 
 function stepHook(dt) {
   if (!hook || hook.held) return;
-  // underdamped spring back onto the leg; the leg stops it, so it bounces once or twice
+  // a spring back onto the leg; the leg stops it and it bounces off with restitution 0.45 * state.bounce
+  // (default 0.09: real fabric settles on the skin almost at once; it used to be a fixed 0.35, which
+  // bounced two or three times)
   hook.vel += (-260 * hook.m - 9 * hook.vel) * dt;
   hook.m += hook.vel * dt;
   if (hook.m < 0) {
     sfx.snap(-hook.vel / 1.2);
     hook.m = 0;
-    hook.vel = -hook.vel * 0.35;
+    hook.vel = -hook.vel * 0.45 * state.bounce;
   }
   if (hook.m < 2e-4 && Math.abs(hook.vel) < 0.02) hook = null;
   state.dirty = true;
