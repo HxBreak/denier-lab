@@ -9,6 +9,7 @@
 // Volume (0..1) is a panel slider; it starts at half, and both it and on/off are remembered in this browser.
 const PREF = 'denier-lab.sound', VOL = 'denier-lab.volume';
 const SNAP_URL = new URL('../sfx/snap.mp3', import.meta.url);
+const SNAP_GAIN = 0.5;                     // a hard snap (strength 1) at full gain, before the volume slider
 
 export class Sfx {
   constructor() {
@@ -32,7 +33,14 @@ export class Sfx {
     if (!AC && !offline) return;
     const ctx = this.ctx = offline || new AC();
     this.live = !offline;
+    // only a safety limiter against clipping: the browser's default compressor (threshold -24 dB, ratio 12)
+    // flattened the attack of the recorded snap, which made it sound dull
     const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -6;
+    comp.knee.value = 3;
+    comp.ratio.value = 4;
+    comp.attack.value = 0.002;
+    comp.release.value = 0.1;
     comp.connect(ctx.destination);
     this.master = ctx.createGain();
     this.master.gain.value = this.level;
@@ -104,9 +112,10 @@ export class Sfx {
 
   // the welt slapping back onto the skin (strength 0..1). Comments said the synthesised one was startling
   // and then that it sounded like a drum (its pitched thump), so it is now a recorded elastic band
-  // click (a random hit if the file holds several, never the same twice running), its pitch varied by
-  // up to +-9% so repeats do not sound identical, louder and brighter the harder it hits. Kept below
-  // the drag sounds.
+  // click (a random hit if the file holds several, never the same twice running), its pitch varied
+  // between -3% and +12% so repeats do not sound identical (never much lower: slower is duller), and
+  // louder the harder it hits. No filtering: a strength-dependent low-pass (most bounces are 0.3..0.9)
+  // made it sound muffled. Kept around the level of the drag sounds.
   snap(strength) {
     if (!this._ready() || strength < 0.04) return;
     const ctx = this.ctx, t = ctx.currentTime, s = Math.min(1, strength);
@@ -114,13 +123,11 @@ export class Sfx {
       let i = Math.floor(Math.random() * this.slaps.length);
       if (this.slaps.length > 1 && i === this._lastSlap) i = (i + 1) % this.slaps.length;
       this._lastSlap = i;
-      const src = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      const src = ctx.createBufferSource(), g = ctx.createGain();
       src.buffer = this.slaps[i];
-      src.playbackRate.value = 0.91 + Math.random() * 0.18;
-      lp.type = 'lowpass';
-      lp.frequency.value = 2500 + 12000 * s;      // soft bounces are duller
-      g.gain.value = 0.8 * Math.pow(s, 0.9);
-      src.connect(lp).connect(g).connect(this.master);
+      src.playbackRate.value = 0.97 + Math.random() * 0.15;
+      g.gain.value = SNAP_GAIN * (0.25 + 0.75 * s);
+      src.connect(g).connect(this.master);
       src.start(t);
       return;
     }
