@@ -4,10 +4,14 @@
 // sound's master bus). Writes shots/snap-live.webm and prints the level and brightness of every snap
 // heard in it. Exits with 1 if a release made no snap or the recording was not used.
 //   node tools/snap-live-check.mjs [url]        (ffmpeg needed for the analysis)
+// SNAP_MODE=snap-only keeps only the snaps (the drag sounds are silenced), SNAP_MODE=no-snap the opposite,
+// to tell which sound is which; the recording then goes to shots/snap-live-<mode>.webm.
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
 const url = process.argv[2] || 'http://127.0.0.1:8090/';
+const MODE = process.env.SNAP_MODE || 'all';
+const OUT = MODE === 'all' ? OUT : `shots/snap-live-${MODE}.webm`;
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: 'new', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
@@ -18,12 +22,13 @@ await page.setViewport({ width: 1440, height: 860 });
 await page.goto(url, { waitUntil: 'load' });
 await page.waitForFunction('document.body.classList.contains("ready")');
 await page.mouse.click(20, 20);                      // the first click unlocks audio
-await page.evaluate(async () => {
+await page.evaluate(async mode => {
   const s = __dl.sfx;
   s.unlock(); await s.loaded;
   window.__snaps = [];
   const orig = s.snap.bind(s);
-  s.snap = st => { if (st >= 0.04) __snaps.push({ t: performance.now(), s: +st.toFixed(2), recorded: !!s.slaps }); orig(st); };
+  s.snap = st => { if (st >= 0.04) __snaps.push({ t: performance.now(), s: +st.toFixed(2), recorded: !!s.slaps }); if (mode !== 'no-snap') orig(st); };
+  if (mode === 'snap-only') { const up = s.update.bind(s); s.update = () => up(0, 0, 0); }
   const dest = s.ctx.createMediaStreamDestination();
   s.master.connect(dest);
   window.__chunks = [];
@@ -31,7 +36,7 @@ await page.evaluate(async () => {
   rec.ondataavailable = e => __chunks.push(e.data);
   rec.start();
   window.__t0 = performance.now();
-});
+}, MODE);
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const top = await page.evaluate(() => __dl.state.top);
 const sil = await page.evaluate(u => {
@@ -68,7 +73,7 @@ const b64 = await page.evaluate(() => new Promise(res => {
 }));
 await browser.close();
 fs.mkdirSync('shots', { recursive: true });
-fs.writeFileSync('shots/snap-live.webm', Buffer.from(b64, 'base64'));
+fs.writeFileSync(OUT, Buffer.from(b64, 'base64'));
 
 const failures = [];
 for (const p of pulls) {
@@ -78,12 +83,12 @@ for (const p of pulls) {
   if (p.fired.some(f => !f.recorded)) failures.push('a snap played the synthesised fallback, not the recording');
 }
 // the recording: level and brightness around each snap that fired
-const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', 'shots/snap-live.webm', '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'], { maxBuffer: 1 << 28 });
+const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', OUT, '-ac', '1', '-ar', '48000', '-f', 'f32le', '-'], { maxBuffer: 1 << 28 });
 const d = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4), sr = 48000;
 // MediaRecorder starts a little after __t0: line the first loud spot up with the first snap
 let first = d.findIndex(v => Math.abs(v) > 0.003);
 const offset = first / sr - pulls[0].fired[0]?.t;
-console.log(`recording: ${(d.length / sr).toFixed(1)} s, ${fs.statSync('shots/snap-live.webm').size} bytes, shots/snap-live.webm`);
+console.log(`recording: ${(d.length / sr).toFixed(1)} s, ${fs.statSync(OUT).size} bytes, shots/snap-live.webm`);
 for (const f of pulls.flatMap(p => p.fired)) {
   const a = Math.max(0, Math.round((f.t + offset - 0.02) * sr)), b = Math.min(d.length, a + Math.round(0.2 * sr));
   let peak = 0, e = 0, ed = 0;
