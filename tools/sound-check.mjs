@@ -7,6 +7,8 @@ import puppeteer from 'puppeteer-core';
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: 'new', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage();
+// the public site can be very slow in the evening (about 25 KB/s on 2026-11-08): allow 5 minutes to load
+page.setDefaultTimeout(300000);
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 await page.setViewport({ width: 1440, height: 860 });
